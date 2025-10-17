@@ -2,16 +2,14 @@ name: SAP Cloud Integration - Download IFlow Test
 
 on:
   push:
-  workflow_dispatch:
 
 # 🔑 Erlaubt es GitHub Actions, Änderungen ins Repo zu pushen
 permissions:
   contents: write
 
 jobs:
-  build:
+  download-package:
     runs-on: ubuntu-latest
-	
 	env:
       PACKAGE_ID: TransportTEST
       SERVICE_KEY_FILE: cpi-service-key.json
