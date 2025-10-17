@@ -3,30 +3,31 @@ name: SAP Cloud Integration - Download IFlow Test
 on:
   push:
 
-# 🔑 Erlaubt es GitHub Actions, Änderungen ins Repo zu pushen
 permissions:
-  contents: write
+  contents: write  # Erlaubt Pushes ins Repo
 
 jobs:
   download-package:
     runs-on: ubuntu-latest
-	env:
+
+    env:
       PACKAGE_ID: TransportTEST
       SERVICE_KEY_FILE: cpi-service-key.json
       OUTPUT_DIR: integration-content
 
     steps:
-      # 🔹 Klont dein Repository in den Runner
-      - name: Checkout Repository
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN}}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-     - name: 📄 Schreibe Service Key in Datei
+      - name: 🧰 Installiere jq, curl, unzip
+        run: sudo apt-get update && sudo apt-get install -y jq curl unzip
+
+      - name: 📄 Schreibe Service Key in Datei
         run: echo "$CPI_SERVICE_KEY_JSON" > $SERVICE_KEY_FILE
         env:
           CPI_SERVICE_KEY_JSON: ${{ secrets.CPI_SERVICE_KEY_JSON }}
-
 
       - name: 🔐 Hole OAuth Token & lade Integration Package herunter
         run: |
@@ -44,35 +45,10 @@ jobs:
             -d "client_secret=$CLIENT_SECRET" \
             | jq -r '.access_token')
 
-       # Ordner vorbereiten
+          # Ordner vorbereiten
           mkdir -p "$OUTPUT_DIR"
           
           # Integration Package herunterladen
           echo "⬇️ Lade Integration Package $PACKAGE_ID..."
           curl -s -X GET \
-            -H "Authorization: Bearer $ACCESS_TOKEN" \
-            -H "Accept: application/zip" \
-            -o "$OUTPUT_DIR/${PACKAGE_ID}.zip" \
-            "$BASE_URL/api/v1/IntegrationPackages('${PACKAGE_ID}')/\$value"
-          
-          echo "✅ Paket gespeichert unter: $OUTPUT_DIR/${PACKAGE_ID}.zip"
-
-      # 🔹 Commit & Push der heruntergeladenen Artefakte zurück ins Repo
-      - name: Commit & Push downloaded files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add downloaded_packages/
-          git commit -m "Downloaded artifact GetGroovyVersion on $(date -u +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
-          git push
-          
-      - name: Upload package to Tenant B
-        uses: SAP/project-piper-action@v1.22.6
-        with:
-          step-name: integrationPackageUpload
-          flags: >-
-            --packageId TransportTEST
-            --filePath downloaded_packages/GetGroovyVersion.zip
-        env:
-          PIPER_apiServiceKey: ${{ secrets.CPI_TENANT_B_KEY }}
-          PIPER_verbose: 'true'
+            -H "Authorization: Bearer $ACCESS
