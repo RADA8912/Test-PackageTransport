@@ -20,14 +20,10 @@ jobs:
       CLIENT_ID: ${{ secrets.TUser }}
       CLIENT_SECRET: ${{ secrets.TSecret }}
       TOKEN_URL: "https://ntt-pi-dev.authentication.eu10.hana.ondemand.com/oauth/token"
-      
 
     steps:
-      # 🔹 Klont dein Repository in den Runner
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN}}
 
       - name: Get OAuth Token
         id: get_token
@@ -60,10 +56,10 @@ jobs:
             exit 1
           fi
 
-      - name: Unzip Package
+      - name: Unzip Package (keep folder structure)
         run: |
           mkdir -p cpi-content/${PACKAGE_ID}
-          unzip -o "${PACKAGE_ID}.zip" -d cpi-content/${PACKAGE_ID} || echo "Keine ZIP-Inhalte oder bereits entpackt"
+          unzip -o "${PACKAGE_ID}.zip" -d cpi-content/${PACKAGE_ID} || true
           rm "${PACKAGE_ID}.zip"
 
       - name: Commit & Push to Repository
@@ -72,7 +68,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch --all
           git add cpi-content/
-          
+
           if git diff --cached --quiet; then
             echo "Keine Änderungen im Package"
           else
