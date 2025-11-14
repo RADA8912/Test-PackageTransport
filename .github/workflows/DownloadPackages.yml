@@ -58,7 +58,7 @@ jobs:
 
       - name: Unzip Package (keep folder structure)
         run: |
-          mkdir -p cpi-content/${PACKAGE_ID}
+          mkdir -p Packages/${PACKAGE_ID}
           unzip -o "${PACKAGE_ID}.zip" -d cpi-content/${PACKAGE_ID} || true
           rm "${PACKAGE_ID}.zip"
 
@@ -67,7 +67,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch --all
-          git add cpi-content/
+          git add Packages/
 
           if git diff --cached --quiet; then
             echo "Keine Änderungen im Package"
