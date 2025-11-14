@@ -1,7 +1,11 @@
 name: SAP Cloud Integration - Download IFlow Test
 
 on:
-  push:
+  workflow_dispatch:
+    inputs:
+      PackageID:
+        description: 'PackageID you want to download'
+        required: true
 
 permissions:
   contents: write  # Erlaubt Pushes ins Repo
@@ -11,9 +15,12 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      PACKAGE_ID: TransportTEST
-      SERVICE_KEY_FILE: cpi-service-key.json
-      OUTPUT_DIR: integration-content
+      PACKAGE_ID: ${{ github.event.inputs.PackageID }}
+      CPI_TENANT: "https://ntt-pi-dev.it-cpi001.cfapps.eu10.hana.ondemand.com"
+      CLIENT_ID: ${{ secrets.TUser }}
+      CLIENT_SECRET: ${{ secrets.TSecret }}
+      TOKEN_URL: "https://ntt-pi-dev.authentication.eu10.hana.ondemand.com/oauth/token"
+      GITHUB_TOKEN: ${{ secrets.GH_PAT }}  # Personal Access Token mit repo-Rechten
 
     steps:
       - name: 📥 Checkout Repository
@@ -21,34 +28,53 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🧰 Installiere jq, curl, unzip
-        run: sudo apt-get update && sudo apt-get install -y jq curl unzip
-
-      - name: 📄 Schreibe Service Key in Datei
-        run: echo "$CPI_SERVICE_KEY_JSON" > $SERVICE_KEY_FILE
-        env:
-          CPI_SERVICE_KEY_JSON: ${{ secrets.CPI_SERVICE_KEY_JSON }}
-
-      - name: 🔐 Hole OAuth Token & lade Integration Package herunter
+     name: Get OAuth Token
+        id: get_token
         run: |
-          # Lese Service Key
-          CLIENT_ID=$(jq -r '.clientid' "$SERVICE_KEY_FILE")
-          CLIENT_SECRET=$(jq -r '.clientsecret' "$SERVICE_KEY_FILE")
-          TOKEN_URL=$(jq -r '.tokenurl' "$SERVICE_KEY_FILE")
-          BASE_URL=$(jq -r '.url' "$SERVICE_KEY_FILE")
-          
-          # Token holen
-          echo "🔐 Hole Token..."
-          ACCESS_TOKEN=$(curl -s -X POST "$TOKEN_URL" \
-            -d "grant_type=client_credentials" \
-            -d "client_id=$CLIENT_ID" \
-            -d "client_secret=$CLIENT_SECRET" \
-            | jq -r '.access_token')
+          TOKEN_RESPONSE=$(curl -s -X POST "$TOKEN_URL" \
+            -u "${CLIENT_ID}:${CLIENT_SECRET}" \
+            -d "grant_type=client_credentials")
 
-          # Ordner vorbereiten
-          mkdir -p "$OUTPUT_DIR"
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
+          if [ "$ACCESS_TOKEN" = "null" ] || [ -z "$ACCESS_TOKEN" ]; then
+            echo "Fehler beim Abrufen des OAuth-Tokens"
+            echo "$TOKEN_RESPONSE"
+            exit 1
+          fi
+          echo "access_token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Download Package as ZIP
+        env:
+          ACCESS_TOKEN: ${{ steps.get_token.outputs.access_token }}
+        run: |
+          API_URL="https://${CPI_TENANT}/api/v1/IntegrationPackages('${PACKAGE_ID}')/\$value"
           
-          # Integration Package herunterladen
-          echo "⬇️ Lade Integration Package $PACKAGE_ID..."
-          curl -s -X GET \
-            -H "Authorization: Bearer $ACCESS
+          curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
+               -H "Accept: application/zip" \
+               -o "${PACKAGE_ID}.zip" \
+               "$API_URL"
+
+          if [ ! -f "${PACKAGE_ID}.zip" ] || [ ! -s "${PACKAGE_ID}.zip" ]; then
+            echo "Download fehlgeschlagen oder Datei leer"
+            exit 1
+          fi
+
+      - name: Unzip Package
+        run: |
+          mkdir -p cpi-content/${PACKAGE_ID}
+          unzip -o "${PACKAGE_ID}.zip" -d cpi-content/${PACKAGE_ID} || echo "Keine ZIP-Inhalte oder bereits entpackt"
+          rm "${PACKAGE_ID}.zip"
+
+      - name: Commit & Push to Repository
+        run: |
+          git pull origin main --rebase || echo "Kein Pull nötig"
+          
+          git add cpi-content/
+          
+          if git diff --cached --quiet; then
+            echo "Keine Änderungen im Package"
+          else
+            git commit -m "chore: Update CPI package ${PACKAGE_ID} from $(date +'%Y-%m-%d %H:%M')"
+            git push origin main
+            echo "Package erfolgreich hochgeladen"
+          fi
