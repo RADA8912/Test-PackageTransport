@@ -20,13 +20,14 @@ jobs:
       CLIENT_ID: ${{ secrets.TUser }}
       CLIENT_SECRET: ${{ secrets.TSecret }}
       TOKEN_URL: "https://ntt-pi-dev.authentication.eu10.hana.ondemand.com/oauth/token"
-      GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+      
 
     steps:
-      - name: 📥 Checkout Repository
+      # 🔹 Klont dein Repository in den Runner
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN}}
 
       - name: Get OAuth Token
         id: get_token
@@ -67,8 +68,9 @@ jobs:
 
       - name: Commit & Push to Repository
         run: |
-          git pull origin main --rebase || echo "Kein Pull nötig"
-          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch --all
           git add cpi-content/
           
           if git diff --cached --quiet; then
