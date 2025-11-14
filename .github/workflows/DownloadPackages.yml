@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       PackageID:
-        description: 'PackageID you want to download'
+        description: "PackageID you want to download"
         required: true
 
 permissions:
-  contents: write  # Erlaubt Pushes ins Repo
+  contents: write
 
 jobs:
   download-package:
@@ -16,11 +16,11 @@ jobs:
 
     env:
       PACKAGE_ID: ${{ github.event.inputs.PackageID }}
-      CPI_TENANT: "https://ntt-pi-dev.it-cpi001.cfapps.eu10.hana.ondemand.com"
+      CPI_TENANT: "ntt-pi-dev.it-cpi001.cfapps.eu10.hana.ondemand.com"
       CLIENT_ID: ${{ secrets.TUser }}
       CLIENT_SECRET: ${{ secrets.TSecret }}
       TOKEN_URL: "https://ntt-pi-dev.authentication.eu10.hana.ondemand.com/oauth/token"
-      GITHUB_TOKEN: ${{ secrets.GH_PAT }}  # Personal Access Token mit repo-Rechten
+      GITHUB_TOKEN: ${{ secrets.GH_PAT }}
 
     steps:
       - name: 📥 Checkout Repository
@@ -28,7 +28,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-     name: Get OAuth Token
+      - name: Get OAuth Token
         id: get_token
         run: |
           TOKEN_RESPONSE=$(curl -s -X POST "$TOKEN_URL" \
