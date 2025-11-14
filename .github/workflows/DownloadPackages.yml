@@ -44,7 +44,7 @@ jobs:
         env:
           ACCESS_TOKEN: ${{ steps.get_token.outputs.access_token }}
         run: |
-          API_URL="https://${CPI_TENANT}/api/v1/IntegrationPackages('${PACKAGE_ID}')/\$value"
+          API_URL="https://${CPI_TENANT}/api/v1/IntegrationPackages('${PACKAGE_ID}')\$value"
           
           curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
                -H "Accept: application/zip" \
