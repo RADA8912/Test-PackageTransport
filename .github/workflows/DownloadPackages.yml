@@ -11,64 +11,45 @@ permissions:
   contents: write
 
 jobs:
-  download-package:
+  download-and-commit:
     runs-on: ubuntu-latest
-
-    env:
-      PACKAGE_ID: ${{ github.event.inputs.PackageID }}
-      CPI_TENANT: "ntt-pi-dev.it-cpi001.cfapps.eu10.hana.ondemand.com"
-      CLIENT_ID: ${{ secrets.TUser }}
-      CLIENT_SECRET: ${{ secrets.TSecret }}
-      TOKEN_URL: "https://ntt-pi-dev.authentication.eu10.hana.ondemand.com/oauth/token"
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}  # Für Push-Berechtigung
 
-      - name: Get OAuth Token
-        id: get_token
+      - name: Fetch OAuth Token
+        id: fetch-token
         run: |
-          TOKEN_RESPONSE=$(curl -s -X POST "$TOKEN_URL" \
-            -u "${CLIENT_ID}:${CLIENT_SECRET}" \
-            -d "grant_type=client_credentials")
+          TOKEN_RESPONSE=$(curl -s -X POST \
+            -u "${{ secrets.CLIENT_ID }}:${{ secrets.CLIENT_SECRET }}" \
+            -d "grant_type=client_credentials" \
+            "https://ntt-pi-dev.authentication.eu10.hana.ondemand.com/oauth/token")
+          ACCESS_TOKEN=$(echo $TOKEN_RESPONSE | jq -r '.access_token')
+          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> $GITHUB_ENV
 
-          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
-          if [ "$ACCESS_TOKEN" = "null" ] || [ -z "$ACCESS_TOKEN" ]; then
-            echo "Fehler beim Abrufen des OAuth-Tokens"
-            echo "$TOKEN_RESPONSE"
-            exit 1
-          fi
-          echo "access_token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
-
-      - name: Download Package as ZIP
-        env:
-          ACCESS_TOKEN: ${{ steps.get_token.outputs.access_token }}
+      - name: Download SAP CPI Package as ZIP
         run: |
-          API_URL="https://${CPI_TENANT}/api/v1/IntegrationPackages('${PACKAGE_ID}')\$value"
-          
-          curl -s -H "Authorization: Bearer $ACCESS_TOKEN" \
-               -H "Accept: application/zip" \
-               -o "${PACKAGE_ID}.zip" \
-               "$API_URL"
+          curl -s -H "Authorization: Bearer ${{ env.ACCESS_TOKEN }}" \
+            -o package.zip \
+            "https://ntt-pi-dev.it-cpi001.cfapps.eu10.hana.ondemand.com/api/v1/IntegrationPackages('${{ github.event.inputs.PACKAGEID}}')/\$value"
 
-          if [ ! -f "${PACKAGE_ID}.zip" ] || [ ! -s "${PACKAGE_ID}.zip" ]; then
-            echo "Download fehlgeschlagen oder Datei leer"
-            exit 1
-          fi
-
-      - name: Unzip Package (keep folder structure)
+      - name: Move ZIP to Repository Folder
         run: |
-          mkdir -p Packages/${PACKAGE_ID}
-          unzip -o "${PACKAGE_ID}.zip" -d cpi-content/${PACKAGE_ID} || true
-          rm "${PACKAGE_ID}.zip"
+          mkdir -p sap-packages  # Ordner erstellen, falls nicht vorhanden
+          mv package.zip sap-packages/${{ github.event.inputs.PACKAGEID }}.zip
 
-      - name: Commit & Push to Repository
+      - name: Commit and Push Changes
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
           git fetch --all
-          git add Packages/
-
+          git add sap-packages/
+          git commit -m "Updated SAP CPI Package ZIP: ${{ github.event.inputs.PACKAGEID }}" || echo "No changes to commit"
+          git push origin main  # Passe 'main' an deinen Branch an
+      
           if git diff --cached --quiet; then
             echo "Keine Änderungen im Package"
           else
