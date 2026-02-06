@@ -1,0 +1,27 @@
+name: Create CPI Integration Package
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js Setup
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Create Integration Package in CPI
+        env:
+          CPI_BASE_URL: ${{ secrets.CPI_BASE_URL }}
+          CPI_USER: ${{ secrets.CPI_USER }}
+          CPI_PASSWORD: ${{ secrets.CPI_PASSWORD }}
+        run: node createPackage.js
