@@ -1,7 +1,4 @@
-import fetch from "node-fetch";
-
 const BASE_URL = process.env.CPI_BASE_URL;
-// z. B. https://<tenant>.it-cpi-design.cfapps.eu10.hana.ondemand.com
 const USER = process.env.CPI_USER;
 const PASS = process.env.CPI_PASSWORD;
 
@@ -27,10 +24,11 @@ async function run() {
   }
 
   const csrfToken = tokenResponse.headers.get("x-csrf-token");
-  const cookies = tokenResponse.headers.raw()["set-cookie"];
+  const cookies = tokenResponse.headers.getSetCookie?.() ||
+                  tokenResponse.headers.raw?.()["set-cookie"];
 
   if (!csrfToken || !cookies) {
-    throw new Error("Token oder Cookies fehlen");
+    throw new Error("CSRF-Token oder Cookies fehlen");
   }
 
   console.log("CSRF Token erhalten");
