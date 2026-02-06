@@ -14,7 +14,7 @@ async function run() {
       headers: {
         "Authorization": authHeader,
         "X-CSRF-Token": "Fetch",
-        "Accept": "application/json"
+        "Accept": "application/xml"
       }
     }
   );
