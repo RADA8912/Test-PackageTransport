@@ -8,20 +8,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Node.js Setup
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Create Integration Package in CPI
+      - name: Fetch CSRF Token
         env:
           CPI_BASE_URL: ${{ secrets.CPI_BASE_URL }}
           CPI_USER: ${{ secrets.CPI_USER }}
           CPI_PASSWORD: ${{ secrets.CPI_PASSWORD }}
-        run: node createPackage.js
+        run: |
+          curl -s -i \
+            -u "$CPI_USER:$CPI_PASSWORD" \
+            -H "X-CSRF-Token: Fetch" \
+            "$CPI_BASE_URL/api/v1/IntegrationPackages" \
+            -c cookies.txt \
+            -o response.txt
+
+          grep -i x-csrf-token response.txt | awk '{print $2}' | tr -d '\r' > token.txt
+
+      - name: Create Integration Package
+        env:
+          CPI_BASE_URL: ${{ secrets.CPI_BASE_URL }}
+          CPI_USER: ${{ secrets.CPI_USER }}
+          CPI_PASSWORD: ${{ secrets.CPI_PASSWORD }}
+        run: |
+          curl -s -X POST \
+            -u "$CPI_USER:$CPI_PASSWORD" \
+            -H "X-CSRF-Token: $(cat token.txt)" \
+            -H "Content-Type: application/json" \
+            -b cookies.txt \
+            "$CPI_BASE_URL/api/v1/IntegrationPackages" \
+            -d '{
+              "Id": "FlashPipeDemo_qas",
+              "Name": "FlashPipeDemo_QAS",
+              "Description": "Test Transport in one Tenant"
+            }'
