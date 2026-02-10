@@ -11,8 +11,8 @@ jobs:
       - name: Get OAuth Token from UAA
         env:
           UAA_TOKEN_URL: ${{ secrets.UAA_TOKEN_URL }}
-          UAA_CLIENT_ID: ${{ secrets.UAA_CLIENT_ID }}  # Korrigiert: secrets.CPI_USER?
-          UAA_CLIENT_SECRET: ${{ secrets.UAA_CLIENT_SECRET }}  # Korrigiert: secrets.CPI_PASSWORD?
+          UAA_CLIENT_ID: ${{ secrets.secrets.CPI_USER }}
+          UAA_CLIENT_SECRET: ${{ secrets.secrets.CPI_PASSWORD }}
         run: |
           echo "Fetching token from $UAA_TOKEN_URL..."
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$UAA_TOKEN_URL" \
