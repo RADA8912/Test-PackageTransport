@@ -71,29 +71,30 @@ jobs:
       # ------------------------------------------------------------
       # 3. Alle 'Id'-Werte extrahieren und speichern
       # ------------------------------------------------------------
-      - name: Extract all 'Id' values
+      - name: Extract all Artifact IDs
         run: |
-          # Extrahiert .d.results[].Id
-          jq -r '.d.results[] | .Id' artifacts_response.json > iflow_ids.txt
+          # Der korrekte Pfad für deine Response-Struktur
+          jq -r '.d.results[] | .Id' artifacts_response.json > artifact_ids.txt
           
-          if [ ! -s iflow_ids.txt ]; then
-            echo "Keine IDs gefunden oder Parsing fehlgeschlagen"
-            echo "Erste Zeilen der Response:"
+          if [ ! -s artifact_ids.txt ]; then
+            echo "Keine IDs gefunden – möglicher Parsing-Fehler"
+            echo "Erste 30 Zeilen der Response:"
             head -n 30 artifacts_response.json
             exit 1
           fi
           
-          echo "Extrahierte IDs:"
-          cat iflow_ids.txt
+          echo "======================================"
+          echo "Extrahierte Artifact-IDs:"
+          cat artifact_ids.txt
+          echo "======================================"
           
-          echo ""
-          echo "Anzahl gefundener IDs: $(wc -l < iflow_ids.txt)"
-          echo "Liste gespeichert in: iflow_ids.txt"
+          echo "Anzahl gefundener Artefakte: $(wc -l < artifact_ids.txt)"
+          echo "Liste gespeichert in: artifact_ids.txt"
 
       # ------------------------------------------------------------
-      # Optional: Nur iFlows filtern (falls gewünscht)
+      # 4. Optional: Übersicht mit Name + Version + Id
       # ------------------------------------------------------------
-      - name: Extract only iFlow IDs (optional filter)
+      - name: Show detailed overview (Id + Name + Version)
         run: |
-          echo "Nur iFlows (ArtifactType = IntegrationFlow):"
-          jq -r '.d.results[] | select(.ArtifactType == "IntegrationFlow") | .Id' artifacts_response.json || echo "Kein ArtifactType-Feld vorhanden oder keine iFlows"
+          echo "Detaillierte Übersicht:"
+          jq -r '.d.results[] | [.Id, .Name, .Version] | @tsv' artifacts_response.json | column -t -s $'\t' || echo "Konnte Tabelle nicht formatieren"
