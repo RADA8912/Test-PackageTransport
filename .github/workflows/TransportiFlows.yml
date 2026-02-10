@@ -1,0 +1,99 @@
+name: Extract iFlow IDs from CPI Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_id:
+        description: 'Technical Package ID (z. B. CloudPlatformAPITestPackage oder GUID)'
+        required: true
+        type: string
+
+jobs:
+  extract-iflow-ids:
+    runs-on: ubuntu-latest
+    steps:
+      # ------------------------------------------------------------
+      # 1. OAuth2 Token holen (Client Credentials Grant)
+      # ------------------------------------------------------------
+      - name: Get OAuth Token
+        env:
+          UAA_TOKEN_URL: ${{ secrets.UAA_TOKEN_URL }}
+          UAA_CLIENT_ID: ${{ secrets.CPI_USER }}
+          UAA_CLIENT_SECRET: ${{ secrets.CPI_PASSWORD }}
+        run: |
+          echo "Fetching OAuth token..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$UAA_TOKEN_URL" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -u "$UAA_CLIENT_ID:$UAA_CLIENT_SECRET" \
+            -d "grant_type=client_credentials")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "Token-Request fehlgeschlagen (HTTP $HTTP_CODE)"
+            echo "$BODY"
+            exit 1
+          fi
+          
+          echo "$BODY" | jq -r '.access_token' > oauth_token.txt
+          echo "Token erhalten (Länge: $(wc -c < oauth_token.txt))"
+
+      # ------------------------------------------------------------
+      # 2. GET: Alle Designtime Artifacts des Packages abrufen
+      # ------------------------------------------------------------
+      - name: Get Designtime Artifacts
+        env:
+          CPI_BASE_URL: ${{ secrets.CPI_BASE_URL }}
+          PACKAGE_ID: ${{ github.event.inputs.package_id }}
+        run: |
+          echo "Package ID: $PACKAGE_ID"
+          
+          URL="$CPI_BASE_URL/api/v1/IntegrationPackages('$PACKAGE_ID')/IntegrationDesigntimeArtifacts"
+          
+          curl -s -w "\n%{http_code}" \
+            -H "Authorization: Bearer $(cat oauth_token.txt)" \
+            -H "Accept: application/json" \
+            "$URL" \
+            -o artifacts_response.json
+          
+          HTTP_STATUS=$(tail -n1 artifacts_response.json)
+          sed -i '$d' artifacts_response.json
+          
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "GET fehlgeschlagen (HTTP $HTTP_STATUS)"
+            cat artifacts_response.json
+            exit 1
+          fi
+          
+          echo "Response erfolgreich erhalten"
+
+      # ------------------------------------------------------------
+      # 3. Alle 'Id'-Werte extrahieren und speichern
+      # ------------------------------------------------------------
+      - name: Extract all 'Id' values
+        run: |
+          # Extrahiert .d.results[].Id
+          jq -r '.d.results[] | .Id' artifacts_response.json > iflow_ids.txt
+          
+          if [ ! -s iflow_ids.txt ]; then
+            echo "Keine IDs gefunden oder Parsing fehlgeschlagen"
+            echo "Erste Zeilen der Response:"
+            head -n 30 artifacts_response.json
+            exit 1
+          fi
+          
+          echo "Extrahierte IDs:"
+          cat iflow_ids.txt
+          
+          echo ""
+          echo "Anzahl gefundener IDs: $(wc -l < iflow_ids.txt)"
+          echo "Liste gespeichert in: iflow_ids.txt"
+
+      # ------------------------------------------------------------
+      # Optional: Nur iFlows filtern (falls gewünscht)
+      # ------------------------------------------------------------
+      - name: Extract only iFlow IDs (optional filter)
+        run: |
+          echo "Nur iFlows (ArtifactType = IntegrationFlow):"
+          jq -r '.d.results[] | select(.ArtifactType == "IntegrationFlow") | .Id' artifacts_response.json || echo "Kein ArtifactType-Feld vorhanden oder keine iFlows"
