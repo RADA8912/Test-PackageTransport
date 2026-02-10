@@ -61,6 +61,7 @@ jobs:
             -H "Authorization: Bearer $(cat oauth_token.txt)" \
             -H "X-CSRF-Token: $(cat csrf_token.txt)" \
             -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
             -b cookies.txt \
             "$CPI_BASE_URL/api/v1/IntegrationPackages" \
             -d '{
