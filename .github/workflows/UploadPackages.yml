@@ -65,7 +65,15 @@ jobs:
             -b cookies.txt \
             "$CPI_BASE_URL/api/v1/IntegrationPackages" \
             -d '{
-              "Id": "FlashPipeDemo_qas",
-              "Name": "FlashPipeDemo_QAS",
-              "Description": "Test Transport in one Tenant"
-            }'
+               "Id": "FlashPipeDemo_qas",
+               "Name": "FlashPipeDemo_QAS",
+               "Description": "Test QAS",
+               "ShortText": "test",
+               "Version": "1.0.0",
+               "SupportedPlatform": "SAP Cloud Integration",
+               "Products": "",
+               "Keywords": "",
+               "Countries": "",
+               "Industries": "Beraterin",
+                "LineOfBusiness": "SAP"
+                }'
