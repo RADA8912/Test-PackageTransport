@@ -4,34 +4,62 @@ on:
   workflow_dispatch:
 
 jobs:
-  create-package:
+  create-integration-package:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Fetch CSRF Token
+      # ------------------------------------------------------------
+      # 1. OAuth2 Token von der SAP UAA holen
+      # ------------------------------------------------------------
+      - name: Get OAuth Token from UAA
+        env:
+          UAA_TOKEN_URL: ${{ secrets.UAA_TOKEN_URL }}
+          UAA_CLIENT_ID: ${{ secrets.secrets.CPI_USER }}
+          UAA_CLIENT_SECRET: ${{ secrets.secrets.CPI_PASSWORD }}
+        run: |
+          curl -s -X POST "$UAA_TOKEN_URL" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -u "$UAA_CLIENT_ID:$UAA_CLIENT_SECRET" \
+            -d "grant_type=client_credentials" \
+            | jq -r '.access_token' > oauth_token.txt
+
+          if [ ! -s oauth_token.txt ]; then
+            echo "OAuth Token konnte nicht geholt werden"
+            exit 1
+          fi
+
+      # ------------------------------------------------------------
+      # 2. X-CSRF-Token von SAP CPI holen (inkl. Cookies)
+      # ------------------------------------------------------------
+      - name: Fetch X-CSRF Token
         env:
           CPI_BASE_URL: ${{ secrets.CPI_BASE_URL }}
-          CPI_USER: ${{ secrets.CPI_USER }}
-          CPI_PASSWORD: ${{ secrets.CPI_PASSWORD }}
         run: |
           curl -s -i \
-            -u "$CPI_USER:$CPI_PASSWORD" \
+            -H "Authorization: Bearer $(cat oauth_token.txt)" \
             -H "X-CSRF-Token: Fetch" \
             "$CPI_BASE_URL/api/v1/IntegrationPackages" \
             -c cookies.txt \
             -o response.txt
 
-          grep -i x-csrf-token response.txt | awk '{print $2}' | tr -d '\r' > token.txt
+          grep -i x-csrf-token response.txt | awk '{print $2}' | tr -d '\r' > csrf_token.txt
 
+          if [ ! -s csrf_token.txt ]; then
+            echo "X-CSRF-Token konnte nicht geholt werden"
+            cat response.txt
+            exit 1
+          fi
+
+      # ------------------------------------------------------------
+      # 3. POST: Integration Package in Design Time anlegen
+      # ------------------------------------------------------------
       - name: Create Integration Package
         env:
           CPI_BASE_URL: ${{ secrets.CPI_BASE_URL }}
-          CPI_USER: ${{ secrets.CPI_USER }}
-          CPI_PASSWORD: ${{ secrets.CPI_PASSWORD }}
         run: |
           curl -s -X POST \
-            -u "$CPI_USER:$CPI_PASSWORD" \
-            -H "X-CSRF-Token: $(cat token.txt)" \
+            -H "Authorization: Bearer $(cat oauth_token.txt)" \
+            -H "X-CSRF-Token: $(cat csrf_token.txt)" \
             -H "Content-Type: application/json" \
             -b cookies.txt \
             "$CPI_BASE_URL/api/v1/IntegrationPackages" \
