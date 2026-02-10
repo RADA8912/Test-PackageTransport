@@ -65,13 +65,9 @@ jobs:
             -b cookies.txt \
             "$CPI_BASE_URL/api/v1/IntegrationPackages" \
             -d '{
-                "Name": "API_Create_Test_Package",
-                "ShortText": "Automatisch via API erstelltes Test-Package",
-                "Description": "Dieses Package wurde über die Integration Content API angelegt.\nVerwendung: Tests für automatisierte Deployment-Pipelines.",
-                "Vendor": "Meine Firma GmbH",
-                "Mode": "EDIT",
-                "Category": "Custom",
-                "SupportedPlatforms": [
-                  "Cloud"
-                ]
-                }'
+              "Name": "MeinPackageViaAPI",
+              "ShortText": "Test via API",
+              "Description": "Automatisiert angelegt",
+              "Vendor": "xAI",
+              "Mode": "EDIT"
+            }'
