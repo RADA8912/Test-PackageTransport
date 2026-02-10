@@ -65,15 +65,13 @@ jobs:
             -b cookies.txt \
             "$CPI_BASE_URL/api/v1/IntegrationPackages" \
             -d '{
-               "Id": "FlashPipeDemo_qas",
-               "Name": "FlashPipeDemo_QAS",
-               "Description": "Test QAS",
-               "ShortText": "test",
-               "Version": "1.0.0",
-               "SupportedPlatform": "SAP Cloud Integration",
-               "Products": "",
-               "Keywords": "",
-               "Countries": "",
-               "Industries": "Beraterin",
-                "LineOfBusiness": "SAP"
+                "Name": "API_Create_Test_Package",
+                "ShortText": "Automatisch via API erstelltes Test-Package",
+                "Description": "Dieses Package wurde über die Integration Content API angelegt.\nVerwendung: Tests für automatisierte Deployment-Pipelines.",
+                "Vendor": "Meine Firma GmbH",
+                "Mode": "EDIT",
+                "Category": "Custom",
+                "SupportedPlatforms": [
+                  "Cloud"
+                ]
                 }'
