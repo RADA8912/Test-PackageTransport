@@ -71,8 +71,7 @@ jobs:
             "Name": "MeinPackageViaAPI",
             "ShortText": "Test via API",
             "Description": "Automatisiert angelegt",
-            "Vendor": "xAI",
-            "Mode": "EDIT"
+            "Vendor": "xAI"
           }'
           echo "JSON Body: $JSON_BODY"  # Logging des Bodys
           
