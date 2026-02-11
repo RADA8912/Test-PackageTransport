@@ -69,26 +69,42 @@ jobs:
           echo "Response erfolgreich erhalten"
 
       # ------------------------------------------------------------
-      # 3. Alle 'Id'-Werte extrahieren und speichern
+      # 3. Alle Artifact-IDs extrahieren (.d.results[].Id)
       # ------------------------------------------------------------
       - name: Extract all Artifact IDs
         run: |
+          # Zuerst: HTTP-Status-Code aus der Response-Datei entfernen (falls vorhanden)
+          if tail -n1 artifacts_response.json | grep -q '^[0-9]\+$'; then
+            sed -i '$d' artifacts_response.json  # Letzte Zeile (Status-Code) löschen
+            echo "HTTP-Status-Code entfernt – Datei jetzt sauber"
+          fi
+          
+          # Validierung: Ist es gültiges JSON? (jq --exit-status testet ohne Ausgabe)
+          if ! jq empty artifacts_response.json >/dev/null 2>&1; then
+            echo "Fehler: artifacts_response.json ist kein gültiges JSON!"
+            echo "Erste 100 Zeichen:"
+            head -c 100 artifacts_response.json
+            exit 1
+          fi
+          
           # Der korrekte Pfad für deine Response-Struktur
           jq -r '.d.results[] | .Id' artifacts_response.json > artifact_ids.txt
           
-          if [ ! -s artifact_ids.txt ]; then
+          # Robuste Prüfung: Zähle extrahierte Zeilen (sollte >0 sein)
+          NUM_IDS=$(wc -l < artifact_ids.txt)
+          if [ "$NUM_IDS" -eq 0 ]; then
             echo "Keine IDs gefunden – möglicher Parsing-Fehler"
+            echo "jq-Ausgabe (rohe):"
+            jq -r '.d.results[] | .Id' artifacts_response.json
             echo "Erste 30 Zeilen der Response:"
             head -n 30 artifacts_response.json
             exit 1
           fi
           
           echo "======================================"
-          echo "Extrahierte Artifact-IDs:"
+          echo "Extrahierte Artifact-IDs (Anzahl: $NUM_IDS):"
           cat artifact_ids.txt
           echo "======================================"
-          
-          echo "Anzahl gefundener Artefakte: $(wc -l < artifact_ids.txt)"
           echo "Liste gespeichert in: artifact_ids.txt"
 
       # ------------------------------------------------------------
