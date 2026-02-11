@@ -69,34 +69,56 @@ jobs:
           echo "Response erfolgreich erhalten"
 
       # ------------------------------------------------------------
-      # 3. Alle Artifact-IDs extrahieren (.d.results[].Id)
+      # 3. d:Id-Werte extrahieren mit Python (Variante 2)
       # ------------------------------------------------------------
-      - name: Extract all Artifact IDs
+      - name: Extract d:Id from Atom XML (Python)
         run: |
-          # Der korrekte Pfad für deine Response-Struktur
-          jq -r '.d.results[] | .Id' artifacts_response.json > artifact_ids.txt
+          python3 - <<'EOF'
+          import xml.etree.ElementTree as ET
+          import sys
+
+          ns = {
+              'atom': 'http://www.w3.org/2005/Atom',
+              'm':   'http://schemas.microsoft.com/ado/2007/08/dataservices/metadata',
+              'd':   'http://schemas.microsoft.com/ado/2007/08/dataservices'
+          }
+
+          try:
+              tree = ET.parse('artifacts_response.xml')
+              root = tree.getroot()
+              
+              ids = []
+              for elem in root.findall('.//atom:entry/m:properties/d:Id', ns):
+                  if elem.text:
+                      ids.append(elem.text.strip())
+              
+              if not ids:
+                  print("Keine <d:Id>-Elemente gefunden.", file=sys.stderr)
+                  sys.exit(1)
+              
+              print("Extrahierte Artifact-IDs:")
+              for id_val in ids:
+                  print(id_val)
+              
+              # In Datei speichern
+              with open('artifact_ids.txt', 'w') as f:
+                  f.write('\n'.join(ids) + '\n')
+              
+              print(f"\nAnzahl: {len(ids)}")
+              print("Gespeichert in: artifact_ids.txt")
+              
+          except Exception as e:
+              print(f"Fehler beim Parsen: {str(e)}", file=sys.stderr)
+              sys.exit(1)
+          EOF
           
-          # Robuste Prüfung: Zähle extrahierte Zeilen (sollte >0 sein)
-          NUM_IDS=$(wc -l < artifact_ids.txt)
-          if [ "$NUM_IDS" -eq 0 ]; then
-            echo "Keine IDs gefunden – möglicher Parsing-Fehler"
-            echo "jq-Ausgabe (rohe):"
-            jq -r '.d.results[] | .Id' artifacts_response.json
-            echo "Erste 30 Zeilen der Response:"
-            head -n 30 artifacts_response.json
+          # Ergebnis im Log anzeigen
+          if [ -f artifact_ids.txt ]; then
+            echo "======================================"
+            echo "Extrahierte IDs:"
+            cat artifact_ids.txt
+            echo "======================================"
+          else
+            echo "Fehler: artifact_ids.txt wurde nicht erstellt"
             exit 1
           fi
-          
-          echo "======================================"
-          echo "Extrahierte Artifact-IDs (Anzahl: $NUM_IDS):"
-          cat artifact_ids.txt
-          echo "======================================"
-          echo "Liste gespeichert in: artifact_ids.txt"
-
-      # ------------------------------------------------------------
-      # 4. Optional: Übersicht mit Name + Version + Id
-      # ------------------------------------------------------------
-      - name: Show detailed overview (Id + Name + Version)
-        run: |
-          echo "Detaillierte Übersicht:"
-          jq -r '.d.results[] | [.Id, .Name, .Version] | @tsv' artifacts_response.json | column -t -s $'\t' || echo "Konnte Tabelle nicht formatieren"
