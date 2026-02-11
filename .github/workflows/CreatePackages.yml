@@ -1,6 +1,11 @@
 name: Create CPI Integration Package
 on:
   workflow_dispatch:
+    inputs:
+      package_id:
+        description: 'Technical Package ID (z. B. CloudPlatformAPITestPackage oder GUID)'
+        required: true
+        type: string
 jobs:
   create-integration-package:
     runs-on: ubuntu-latest
@@ -68,10 +73,10 @@ jobs:
         run: |
           echo "Creating Package at $CPI_BASE_URL/api/v1/IntegrationPackages"
           JSON_BODY='{
-            "Name": "MeinPackageViaAPI",
+            "Name": "${{ github.event.inputs.package_id }}_QAS",
             "ShortText": "Test via API",
-            "Description": "Automatisiert angelegt",
-            "Vendor": "xAI"
+            "Description": "Test Package von ${{ github.event.inputs.package_id }}",
+            "Vendor": "NTT"
           }'
           echo "JSON Body: $JSON_BODY"  # Logging des Bodys
           
