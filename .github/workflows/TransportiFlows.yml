@@ -53,11 +53,11 @@ jobs:
           
           curl -s -w "\n%{http_code}" \
             -H "Authorization: Bearer $(cat oauth_token.txt)" \
-            -H "Accept: application/json" \
+            -H "Accept: application/xml" \
             "$URL" \
-            -o artifacts_response.json
+            -o artifacts_response.xml
           
-          HTTP_STATUS=$(tail -n1 artifacts_response.json)
+          HTTP_STATUS=$(tail -n1 artifacts_response.xml)
           sed -i '$d' artifacts_response.json
           
           if [ "$HTTP_STATUS" -ne 200 ]; then
