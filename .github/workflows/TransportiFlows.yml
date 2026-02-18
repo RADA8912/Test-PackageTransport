@@ -122,19 +122,18 @@ jobs:
           echo "$MATRIX_CONTENT" | jq .
           echo "matrix=$MATRIX_CONTENT" >> "$GITHUB_OUTPUT"
 
-  # 5. Matrix-Job für Transport (separater Job!)
-  transport-all:
-    needs: [extract-iflow-ids, generate-matrix]
-    if: ${{ steps.generate-matrix.outputs.matrix != '{"include":[]}' }}
-    runs-on: ubuntu-latest   # ← erforderlich, auch bei reusable workflows mit matrix
-    strategy:
-      fail-fast: false
-      max-parallel: 3
-      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
-    name: Transport ${{ matrix.iFlowId }}  # statisch – matrix-Werte werden hier nicht ersetzt
-    uses: ./.github/workflows/transportScenarioArtifacts.yml
-    with:
-      iFlowId:         ${{ matrix.iFlowId }}
-      artifactVersion: ${{ matrix.artifactVersion }}
-      packageID:       ${{ matrix.packageID }}
-    secrets: inherit
+      # 5. Matrix-Job für Transport (separater Job!)
+      transport-all:
+        name: Transport iFlows to QAS     
+        needs: [extract-iflow-ids, generate-matrix]
+        if: ${{ steps.generate-matrix.outputs.matrix != '{"include":[]}' }}
+        strategy:
+          fail-fast: false
+          max-parallel: 3
+          matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+        uses: ./.github/workflows/transportScenarioArtifacts.yml
+        with:
+          iFlowId:         ${{ matrix.iFlowId }}
+          artifactVersion: ${{ matrix.artifactVersion }}
+          packageID:       ${{ matrix.packageID }}
+        secrets: inherit
