@@ -14,8 +14,8 @@ permissions:
 jobs:
   extract-iflow-ids:
     runs-on: ubuntu-latest
+    
     steps:
-      # 1. OAuth2 Token holen
       - name: Get OAuth Token
         env:
           UAA_TOKEN_URL:    ${{ secrets.UAA_TOKEN_URL }}
@@ -37,7 +37,6 @@ jobs:
           echo "$BODY" | jq -r '.access_token' > oauth_token.txt
           echo "Token erhalten (Länge: $(wc -c < oauth_token.txt))"
 
-      # 2. GET Designtime Artifacts
       - name: Get Designtime Artifacts
         env:
           CPI_BASE_URL: ${{ secrets.CPI_BASE_URL }}
@@ -83,7 +82,6 @@ jobs:
           echo "Erfolgreich gespeichert → response.xml ($(wc -c < response.xml) Bytes)"
           head -n 12 response.xml || echo "(konnte XML-Head nicht anzeigen)"
 
-      # 3. Python-Extraktion
       - name: Extract iFlow IDs and Versions (Python)
         run: |
           python3 - <<'PY'
@@ -95,13 +93,12 @@ jobs:
           cat artifacts.txt || echo "(Datei leer oder nicht vorhanden)"
           echo "======================================"
 
-      # 4. Matrix generieren
       - name: Generate matrix from artifacts.txt
         id: generate-matrix
         run: |
           if [ ! -s artifacts.txt ]; then
             echo "artifacts.txt ist leer → nichts zu transportieren"
-            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[]}' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -122,18 +119,19 @@ jobs:
           echo "$MATRIX_CONTENT" | jq .
           echo "matrix=$MATRIX_CONTENT" >> "$GITHUB_OUTPUT"
 
-      # 5. Matrix-Job für Transport (separater Job!)
-      transport-all:
-        name: Transport iFlows to QAS     
-        needs: [extract-iflow-ids, generate-matrix]
-        if: ${{ steps.generate-matrix.outputs.matrix != '{"include":[]}' }}
-        strategy:
-          fail-fast: false
-          max-parallel: 3
-          matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
-        uses: ./.github/workflows/transportScenarioArtifacts.yml
-        with:
-          iFlowId:         ${{ matrix.iFlowId }}
-          artifactVersion: ${{ matrix.artifactVersion }}
-          packageID:       ${{ matrix.packageID }}
-        secrets: inherit
+  transport-all:
+    needs: [extract-iflow-ids]
+    # Korrigierte Bedingung – greift auf Output des vorherigen Jobs zu
+    if: ${{ needs.extract-iflow-ids.outputs.matrix != '{"include":[]}' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJson(needs.extract-iflow-ids.outputs.matrix) }}
+    # name: Transport multiple iFlows   # ← statisch, oder komplett weglassen
+    uses: ./.github/workflows/transportScenarioArtifacts.yml
+    with:
+      iFlowId:         ${{ matrix.iFlowId }}
+      artifactVersion: ${{ matrix.artifactVersion }}
+      packageID:       ${{ matrix.packageID }}
+    secrets: inherit
