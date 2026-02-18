@@ -6,28 +6,31 @@ on:
       iFlowId:
         description: 'Artifact Id'
         required: true
+        type: string
+
       artifactVersion:
         description: 'Version of the Artifact'
         required: true
+        type: string
+
       packageID:
         description: 'Package ID for upload'
         required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  transport-to-qas:
     runs-on: ubuntu-latest
 
     steps:
-      # 🔹 Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 🔹 Download iFlow
       - name: Download IFlow from SAP Cloud Integration
         uses: SAP/project-piper-action@v1.22.6
         with:
@@ -40,57 +43,48 @@ jobs:
           PIPER_apiServiceKey: ${{ secrets.CPIDOWNLOADKEY }}
           PIPER_verbose: 'true'
 
-      # 🔹 Unzip iFlow
       - name: Unzip iFlow
         run: |
           mkdir -p workdir
-          unzip downloaded_artifacts/${{ github.event.inputs.iFlowId }}.zip -d workdir
+          unzip "downloaded_artifacts/${{ github.event.inputs.iFlowId }}.zip" -d workdir
 
-      # 🔹 Manipulate MANIFEST.MF
       - name: Update MANIFEST.MF (_qas)
         run: |
-          find workdir -type f -path "*/META-INF/MANIFEST.MF" | while read manifest; do
+          find workdir -type f -path "*/META-INF/MANIFEST.MF" | while read -r manifest; do
             echo "Updating $manifest"
 
-            # Bundle-SymbolicName → nur Teil vor ;
             sed -i -E '
               /^Bundle-SymbolicName:/ {
                 s/^Bundle-SymbolicName: ([^;_]+)(_qas)?(;.*)?$/Bundle-SymbolicName: \1_qas\3/
               }
             ' "$manifest"
 
-            # Origin-Bundle-SymbolicName (Komplett EINZEILIG)
             sed -i -E '
               /^Origin-Bundle-SymbolicName:/ {
                 s/^Origin-Bundle-SymbolicName:[[:space:]]*([^[:space:]]+)(_qas)?$/Origin-Bundle-SymbolicName: \1_qas/
               }
             ' "$manifest"
-
           done
 
-      # 🔹 Prepare QAS artifact directory
       - name: Prepare QAS artifact directory
         run: |
           mkdir -p downloaded_artifacts_qas
 
-      # 🔹 Rezip iFlow → QAS-Verzeichnis
       - name: Zip modified iFlow (QAS)
         run: |
-          cd workdir
-          zip -r ../downloaded_artifacts_qas/${{ github.event.inputs.iFlowId }}_qas.zip .
+          cd workdir || exit 1
+          zip -r "../downloaded_artifacts_qas/${{ github.event.inputs.iFlowId }}_qas.zip" .
           cd ..
 
-      # 🔹 Commit QAS artifact (optional aber sauber)
       - name: Commit QAS iFlow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add downloaded_artifacts_qas/
-          git commit -m "Create QAS artifact for ${{ github.event.inputs.iFlowId }}" || echo "No changes"
-          git push
+          git add downloaded_artifacts_qas/ || true
+          git commit -m "Create QAS artifact for ${{ github.event.inputs.iFlowId }}" || echo "No changes to commit"
+          git push || echo "Push not necessary or failed"
 
-      # 🔹 Upload/Deploy IFlow to Tenant 
-      - name: Upload/Deploy IFlow to Tenant 
+      - name: Upload/Deploy IFlow to Tenant (QAS)
         uses: SAP/project-piper-action@v1.22.6
         with:
           step-name: integrationArtifactUpload
