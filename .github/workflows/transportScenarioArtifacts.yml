@@ -6,21 +6,13 @@ on:
       iFlowId:
         description: 'Artifact Id'
         required: true
-        type: string
-
       artifactVersion:
         description: 'Version of the Artifact'
         required: true
-        type: string
-
       packageID:
         description: 'Package ID for upload'
         required: true
-        type: string
-
-permissions:
-  contents: write
-
+        
 jobs:
   transport-qas:
     runs-on: ubuntu-latest
