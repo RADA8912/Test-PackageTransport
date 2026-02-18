@@ -69,6 +69,14 @@ jobs:
           echo "Response erfolgreich erhalten"
 
       # ------------------------------------------------------------
+      # 3a. xmllint installieren (libxml2-utils)
+      # ------------------------------------------------------------
+      - name: Install xmllint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils
+
+      # ------------------------------------------------------------
       # 3. d:Id UND d:Version extrahieren mit XPath (xmllint)
       # ------------------------------------------------------------
       - name: Extract d:Id and d:Version from Atom XML (XPath)
