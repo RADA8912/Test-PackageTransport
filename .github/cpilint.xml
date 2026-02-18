@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<cpilint>
+    <rules>
+        <!-- Built-in rules go here -->
+        <allowed-scripting-languages>
+            <allow>groovy</allow>
+        </allowed-scripting-languages>
+
+        <cleartext-basic-auth-not-allowed/>
+
+    </rules>
+</cpilint>
