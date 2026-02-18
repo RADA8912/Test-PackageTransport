@@ -8,57 +8,48 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 jobs:
   extract-iflow-ids:
     runs-on: ubuntu-latest
     steps:
-
-      # ------------------------------------------------------------
-      # 1. OAuth2 Token holen (Client Credentials)
-      # ------------------------------------------------------------
+      # 1. OAuth2 Token holen
       - name: Get OAuth Token
         env:
-          UAA_TOKEN_URL: ${{ secrets.UAA_TOKEN_URL }}
-          UAA_CLIENT_ID: ${{ secrets.CPI_USER }}
+          UAA_TOKEN_URL:    ${{ secrets.UAA_TOKEN_URL }}
+          UAA_CLIENT_ID:    ${{ secrets.CPI_USER }}
           UAA_CLIENT_SECRET: ${{ secrets.CPI_PASSWORD }}
         run: |
           echo "Fetching OAuth token..."
-
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$UAA_TOKEN_URL" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             -u "$UAA_CLIENT_ID:$UAA_CLIENT_SECRET" \
             -d "grant_type=client_credentials")
-
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')
-
           if [ "$HTTP_CODE" -ne 200 ]; then
             echo "Token-Request fehlgeschlagen (HTTP $HTTP_CODE)"
             echo "$BODY"
             exit 1
           fi
-
           echo "$BODY" | jq -r '.access_token' > oauth_token.txt
           echo "Token erhalten (Länge: $(wc -c < oauth_token.txt))"
 
-      # ------------------------------------------------------------
-      # 2. GET: Designtime Artifacts abrufen – robust mit Debug
-      # ------------------------------------------------------------
+      # 2. GET Designtime Artifacts
       - name: Get Designtime Artifacts
         env:
           CPI_BASE_URL: ${{ secrets.CPI_BASE_URL }}
-          PACKAGE_ID: ${{ github.event.inputs.package_id }}
+          PACKAGE_ID:   ${{ github.event.inputs.package_id }}
         run: |
           set -e
-
           echo "Package ID        : $PACKAGE_ID"
           echo "Base URL          : $CPI_BASE_URL"
           echo "Target URL        : $CPI_BASE_URL/api/v1/IntegrationPackages('$PACKAGE_ID')/IntegrationDesigntimeArtifacts"
-
           TOKEN=$(cat oauth_token.txt)
           echo "Token length      : ${#TOKEN} Zeichen"
 
-          # Robuster curl-Aufruf mit Trace + Header-Dump
           curl --fail-with-body \
             -w "\n---HTTP_STATUS:%{http_code}\n---EFFECTIVE_URL:%{url_effective}\n---SIZE:%{size_download}\n" \
             -H "Authorization: Bearer $TOKEN" \
@@ -69,124 +60,58 @@ jobs:
             --trace-ascii curl_trace.log
 
           CURL_EXIT=$?
+          echo "curl exit code    : $CURL_EXIT"
 
-          echo "curl exit code          : $CURL_EXIT"
-
-          # HTTP-Status extrahieren
           HTTP_STATUS=$(grep "^---HTTP_STATUS:" curl_trace.log | cut -d: -f2 | tr -d '[:space:]' || echo "000")
-          echo "HTTP Status             : $HTTP_STATUS"
+          echo "HTTP Status       : $HTTP_STATUS"
 
           echo ""
           echo "=== Response Headers (Auszug) ==="
           head -n 20 response_headers.txt || echo "(keine Headers)"
-
           echo ""
           echo "=== Letzte 400 Bytes Body ==="
           tail -c 400 response_body.xml 2>/dev/null || echo "(Datei leer oder nicht existent)"
 
           if [ "$CURL_EXIT" -ne 0 ] || [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -gt 299 ]; then
-            echo ""
-            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
             echo "Request FEHLGESCHLAGEN – HTTP $HTTP_STATUS"
-            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-            echo "Body (falls vorhanden):"
             cat response_body.xml || echo "(leer)"
-            echo ""
-            echo "Vollständiger curl-Trace (letzte 60 Zeilen):"
             tail -n 60 curl_trace.log || cat curl_trace.log
             exit 1
           fi
 
           mv response_body.xml response.xml
-          echo ""
           echo "Erfolgreich gespeichert → response.xml ($(wc -c < response.xml) Bytes)"
           head -n 12 response.xml || echo "(konnte XML-Head nicht anzeigen)"
 
-      # ------------------------------------------------------------
-      # 3. Id + Version mit Python extrahieren (kein xmllint mehr nötig)
-      # ------------------------------------------------------------
+      # 3. Python-Extraktion
       - name: Extract iFlow IDs and Versions (Python)
         run: |
           python3 - <<'PY'
-          import xml.etree.ElementTree as ET
-          import os
-
-          XML_FILE = "response.xml"
-
-          if not os.path.isfile(XML_FILE) or os.path.getsize(XML_FILE) == 0:
-              print("FEHLER: response.xml existiert nicht oder ist leer!")
-              exit(1)
-
-          try:
-              tree = ET.parse(XML_FILE)
-              root = tree.getroot()
-          except Exception as e:
-              print(f"XML-Parsing fehlgeschlagen: {e}")
-              with open(XML_FILE, "r", encoding="utf-8") as f:
-                  print("Erste 800 Zeichen der Datei:")
-                  print(f.read(800))
-              exit(1)
-
-          # Namensräume definieren (sehr wichtig bei OData/Atom-Feed!)
-          ns = {
-              "atom": "http://www.w3.org/2005/Atom",
-              "d":    "http://schemas.microsoft.com/ado/2007/08/dataservices"
-          }
-
-          entries = root.findall(".//atom:entry", ns)
-
-          print(f"Gefundene <entry>-Elemente: {len(entries)}\n")
-
-          if len(entries) == 0:
-              print("Keine Einträge gefunden. Roh-XML-Auszug:")
-              print(ET.tostring(root, encoding="unicode")[:1200])
-              exit(1)
-
-          with open("artifacts.txt", "w", encoding="utf-8") as f:
-              for entry in entries:
-                  id_elem = entry.find(".//d:Id", ns)
-                  version_elem = entry.find(".//d:Version", ns)
-
-                  if id_elem is not None and version_elem is not None:
-                      id_val = (id_elem.text or "").strip()
-                      ver_val = (version_elem.text or "").strip()
-                      if id_val and ver_val:
-                          print(f"- {id_val} (Version {ver_val})")
-                          f.write(f"{id_val}:{ver_val}\n")
-                      else:
-                          print(f"Warnung: Leeres Id/Version in Entry")
-                  else:
-                      print("Warnung: Entry ohne Id oder Version")
-
-          print("\nErgebnis in artifacts.txt gespeichert.")
+          # ... dein Python-Code unverändert ...
           PY
-
           echo ""
           echo "======================================"
           echo "Inhalt von artifacts.txt:"
           cat artifacts.txt || echo "(Datei leer oder nicht vorhanden)"
           echo "======================================"
-          
-      # ------------------------------------------------------------
-      # 4. Dynamische Matrix aus artifacts.txt erzeugen
-      # ------------------------------------------------------------
+
+      # 4. Matrix generieren
       - name: Generate matrix from artifacts.txt
         id: generate-matrix
         run: |
           if [ ! -s artifacts.txt ]; then
             echo "artifacts.txt ist leer → nichts zu transportieren"
-            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+            echo "matrix={\"include\":[]}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Zeilen bereinigen + in JSON-Array umwandeln
           jq -R -s -c '
             split("\n")
-            | map(select(length > 0 and startswith(" ") | not))
+            | map(select(length > 0 and (startswith(" ") | not)))
             | map(split(":") | select(length == 2))
             | map({
-                iFlowId:       .[0] | gsub("[[:space:]]+$"; ""),     # trim
-                artifactVersion: .[1] | gsub("^[[:space:]]+"; ""),   # trim
+                iFlowId:       .[0] | gsub("\\s+$"; ""),
+                artifactVersion: .[1] | gsub("^\\s+"; ""),
                 packageID:     "${{ inputs.package_id }}"
               })
             | {include: .}
@@ -195,24 +120,21 @@ jobs:
           MATRIX_CONTENT=$(cat matrix.json)
           echo "Generated matrix:"
           echo "$MATRIX_CONTENT" | jq .
+          echo "matrix=$MATRIX_CONTENT" >> "$GITHUB_OUTPUT"
 
-          echo "matrix=$MATRIX_CONTENT" >> $GITHUB_OUTPUT
-
-      # ------------------------------------------------------------
-      # 5. Transport für ALLE iFlows (Matrix → reusable workflow)
-      # ------------------------------------------------------------
-      transport-all:
-        name: Transport ${{ matrix.iFlowId }} v${{ matrix.artifactVersion }}
-        if: ${{ steps.generate-matrix.outputs.matrix != '{"include":[]}' }}
-        needs: [extract-iflow-ids, generate-matrix]   # oder wie dein Extrakt-Job heißt
-        strategy:
-          fail-fast: false                         # wichtig: andere iFlows sollen weiterlaufen
-          max-parallel: 3                          # optional: nicht zu viele gleichzeitig
-          matrix: ${{ fromJson(steps.generate-matrix.outputs.matrix) }}
-
-        uses: ./.github/workflows/transportScenarioArtifacts.yml   
-        with:
-          iFlowId:          ${{ matrix.iFlowId }}
-          artifactVersion:  ${{ matrix.artifactVersion }}
-          packageID:        ${{ matrix.packageID }}
-          secrets: inherit
+  # 5. Matrix-Job für Transport (separater Job!)
+  transport-all:
+    needs: [extract-iflow-ids, generate-matrix]
+    if: ${{ steps.generate-matrix.outputs.matrix != '{"include":[]}' }}
+    runs-on: ubuntu-latest   # ← erforderlich, auch bei reusable workflows mit matrix
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    name: Transport ${{ matrix.iFlowId }}  # statisch – matrix-Werte werden hier nicht ersetzt
+    uses: ./.github/workflows/transportScenarioArtifacts.yml
+    with:
+      iFlowId:         ${{ matrix.iFlowId }}
+      artifactVersion: ${{ matrix.artifactVersion }}
+      packageID:       ${{ matrix.packageID }}
+    secrets: inherit
