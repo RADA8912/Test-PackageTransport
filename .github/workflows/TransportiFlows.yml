@@ -69,68 +69,48 @@ jobs:
           echo "Response erfolgreich erhalten"
 
       # ------------------------------------------------------------
-      # 3. d:Id UND d:Version extrahieren (Atom XML)
+      # 3. d:Id UND d:Version extrahieren mit XPath (xmllint)
       # ------------------------------------------------------------
-      - name: Extract d:Id and d:Version from Atom XML (Python)
+      - name: Extract d:Id and d:Version from Atom XML (XPath)
         run: |
-          python3 - <<'EOF'
-          import xml.etree.ElementTree as ET
-          import sys
-          import json
+          set -e
 
-          ns = {
-              'atom': 'http://www.w3.org/2005/Atom',
-              'm':   'http://schemas.microsoft.com/ado/2007/08/dataservices/metadata',
-              'd':   'http://schemas.microsoft.com/ado/2007/08/dataservices'
-          }
+          XML_FILE="artifacts_response.xml"
 
-          try:
-              tree = ET.parse('artifacts_response.xml')
-              root = tree.getroot()
+          # Anzahl der <entry>-Elemente ermitteln
+          ENTRY_COUNT=$(xmllint --xpath \
+            "count(/*[local-name()='feed']/*[local-name()='entry'])" \
+            "$XML_FILE")
 
-              artifacts = []
+          ENTRY_COUNT=${ENTRY_COUNT%.*}
 
-              for props in root.findall('.//atom:entry/m:properties', ns):
-                  id_elem = props.find('d:Id', ns)
-                  ver_elem = props.find('d:Version', ns)
+          if [ "$ENTRY_COUNT" -eq 0 ]; then
+            echo "Keine <entry>-Elemente gefunden"
+            exit 1
+          fi
 
-                  if id_elem is not None and ver_elem is not None:
-                      artifacts.append({
-                          "id": id_elem.text.strip(),
-                          "version": ver_elem.text.strip()
-                      })
+          echo "Gefundene Artifacts: $ENTRY_COUNT"
+          echo ""
 
-              if not artifacts:
-                  print("Keine Artifacts gefunden.", file=sys.stderr)
-                  sys.exit(1)
+          > artifacts.txt
 
-              # --- Ausgabe im Log ---
-              print("Extrahierte Artifacts:")
-              for a in artifacts:
-                  print(f"- {a['id']} (Version {a['version']})")
+          for i in $(seq 1 "$ENTRY_COUNT"); do
+            ID=$(xmllint --xpath \
+              "string((/*[local-name()='feed']/*[local-name()='entry'][$i]//*[local-name()='Id'])[1])" \
+              "$XML_FILE")
 
-              print(f"\nAnzahl: {len(artifacts)}")
+            VERSION=$(xmllint --xpath \
+              "string((/*[local-name()='feed']/*[local-name()='entry'][$i]//*[local-name()='Version'])[1])" \
+              "$XML_FILE")
 
-              # --- JSON speichern (empfohlen für Weiterverarbeitung) ---
-              with open('artifacts.json', 'w') as f:
-                  json.dump(artifacts, f, indent=2)
+            if [ -n "$ID" ] && [ -n "$VERSION" ]; then
+              echo "- $ID (Version $VERSION)"
+              echo "$ID:$VERSION" >> artifacts.txt
+            fi
+          done
 
-              # --- TXT speichern (optional) ---
-              with open('artifacts.txt', 'w') as f:
-                  for a in artifacts:
-                      f.write(f"{a['id']}:{a['version']}\n")
-
-              print("\nGespeichert in:")
-              print("- artifacts.json")
-              print("- artifacts.txt")
-
-          except Exception as e:
-              print(f"Fehler beim Parsen: {str(e)}", file=sys.stderr)
-              sys.exit(1)
-          EOF
-
-          # Ergebnisse anzeigen
+          echo ""
           echo "======================================"
-          echo "artifacts.txt:"
+          echo "Gespeichert in artifacts.txt:"
           cat artifacts.txt
           echo "======================================"
