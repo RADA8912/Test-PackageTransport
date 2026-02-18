@@ -6,17 +6,24 @@ on:
       iFlowId:
         description: 'Artifact Id'
         required: true
+        type: string
+
       artifactVersion:
         description: 'Version of the Artifact'
         required: true
+        type: string
+
       packageID:
         description: 'Package ID for upload'
         required: true
-        
+        type: string
+
+permissions:
+  contents: write
+
 jobs:
   transport-qas:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -44,13 +51,11 @@ jobs:
         run: |
           find workdir -type f -path "*/META-INF/MANIFEST.MF" | while read -r manifest; do
             echo "Updating $manifest"
-
             sed -i -E '
               /^Bundle-SymbolicName:/ {
                 s/^Bundle-SymbolicName: ([^;_]+)(_qas)?(;.*)?$/Bundle-SymbolicName: \1_qas\3/
               }
             ' "$manifest"
-
             sed -i -E '
               /^Origin-Bundle-SymbolicName:/ {
                 s/^Origin-Bundle-SymbolicName:[[:space:]]*([^[:space:]]+)(_qas)?$/Origin-Bundle-SymbolicName: \1_qas/
