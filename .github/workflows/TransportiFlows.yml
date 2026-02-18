@@ -14,7 +14,7 @@ jobs:
     steps:
 
       # ------------------------------------------------------------
-      # xmllint installieren (libxml2-utils)
+      # xmllint installieren (für XPath-Abfragen)
       # ------------------------------------------------------------
       - name: Install xmllint
         run: |
@@ -22,7 +22,7 @@ jobs:
           sudo apt-get install -y libxml2-utils
 
       # ------------------------------------------------------------
-      # 1. OAuth2 Token holen (Client Credentials Grant)
+      # 1. OAuth2 Token holen (Client Credentials)
       # ------------------------------------------------------------
       - name: Get OAuth Token
         env:
@@ -31,6 +31,7 @@ jobs:
           UAA_CLIENT_SECRET: ${{ secrets.CPI_PASSWORD }}
         run: |
           echo "Fetching OAuth token..."
+
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$UAA_TOKEN_URL" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             -u "$UAA_CLIENT_ID:$UAA_CLIENT_SECRET" \
@@ -49,52 +50,89 @@ jobs:
           echo "Token erhalten (Länge: $(wc -c < oauth_token.txt))"
 
       # ------------------------------------------------------------
-      # 2. GET: Alle Designtime Artifacts des Packages abrufen
-      #    → jetzt als response.xml speichern
+      # 2. GET: Designtime Artifacts abrufen – robust mit Debug
       # ------------------------------------------------------------
       - name: Get Designtime Artifacts
         env:
           CPI_BASE_URL: ${{ secrets.CPI_BASE_URL }}
           PACKAGE_ID: ${{ github.event.inputs.package_id }}
         run: |
-          echo "Package ID: $PACKAGE_ID"
+          set -e
 
-          URL="$CPI_BASE_URL/api/v1/IntegrationPackages('$PACKAGE_ID')/IntegrationDesigntimeArtifacts"
+          echo "Package ID        : $PACKAGE_ID"
+          echo "Base URL          : $CPI_BASE_URL"
+          echo "Target URL        : $CPI_BASE_URL/api/v1/IntegrationPackages('$PACKAGE_ID')/IntegrationDesigntimeArtifacts"
 
-          curl -s -w "\n%{http_code}" \
-            -H "Authorization: Bearer $(cat oauth_token.txt)" \
+          TOKEN=$(cat oauth_token.txt)
+          echo "Token length      : ${#TOKEN} Zeichen"
+
+          # ────────────────────────────────────────────────
+          # Robuster curl-Aufruf mit Trace + Header-Dump
+          # ────────────────────────────────────────────────
+          curl --fail-with-body \
+            -w "\n---HTTP_STATUS:%{http_code}\n---EFFECTIVE_URL:%{url_effective}\n---SIZE:%{size_download}\n" \
+            -H "Authorization: Bearer $TOKEN" \
             -H "Accept: application/xml" \
-            "$URL" \
-            -o response.xml
+            "$CPI_BASE_URL/api/v1/IntegrationPackages('$PACKAGE_ID')/IntegrationDesigntimeArtifacts" \
+            -o response_body.xml \
+            --dump-header response_headers.txt \
+            --trace-ascii curl_trace.log
 
-          HTTP_STATUS=$(tail -n1 response.xml)
-          sed -i '$d' response.xml
+          CURL_EXIT=$?
 
-          if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "GET fehlgeschlagen (HTTP $HTTP_STATUS)"
-            cat response.xml
+          echo "curl exit code          : $CURL_EXIT"
+
+          # HTTP-Status extrahieren
+          HTTP_STATUS=$(grep "^---HTTP_STATUS:" curl_trace.log | cut -d: -f2 | tr -d '[:space:]' || echo "000")
+          echo "HTTP Status             : $HTTP_STATUS"
+
+          echo ""
+          echo "=== Response Headers (Auszug) ==="
+          head -n 20 response_headers.txt || echo "(keine Headers)"
+
+          echo ""
+          echo "=== Letzte 400 Bytes Body (falls vorhanden) ==="
+          tail -c 400 response_body.xml 2>/dev/null || echo "(Datei leer oder nicht existent)"
+
+          if [ "$CURL_EXIT" -ne 0 ] || [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -gt 299 ]; then
+            echo ""
+            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            echo "Request FEHLGESCHLAGEN – HTTP $HTTP_STATUS"
+            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+            echo "Body (falls vorhanden):"
+            cat response_body.xml || echo "(leer)"
+            echo ""
+            echo "Vollständiger curl-Trace:"
+            tail -n 60 curl_trace.log || cat curl_trace.log
             exit 1
           fi
 
-          echo "Response erfolgreich als response.xml gespeichert"
-          ls -l response.xml
+          mv response_body.xml response.xml
+          echo ""
+          echo "Erfolgreich gespeichert → response.xml ($(wc -c < response.xml) Bytes)"
+          head -n 12 response.xml || echo "(konnte XML-Head nicht anzeigen)"
 
       # ------------------------------------------------------------
       # 3. d:Id und d:Version aus response.xml extrahieren
       # ------------------------------------------------------------
-      - name: Extract d:Id and d:Version from response.xml (XPath)
+      - name: Extract d:Id and d:Version from response.xml
         run: |
           set -e
           XML_FILE="response.xml"
 
-          # Anzahl der <entry>-Elemente ermitteln
-          ENTRY_COUNT=$(xmllint --xpath \
-            "count(/*[local-name()='feed']/*[local-name()='entry'])" \
-            "$XML_FILE")
+          if [ ! -s "$XML_FILE" ]; then
+            echo "FEHLER: response.xml ist leer oder existiert nicht!"
+            ls -la response.xml || true
+            exit 1
+          fi
+
+          # Anzahl <entry>-Elemente zählen
+          ENTRY_COUNT=$(xmllint --xpath "count(//*[local-name()='feed']/*[local-name()='entry'])" "$XML_FILE" 2>/dev/null || echo "0")
           ENTRY_COUNT=${ENTRY_COUNT%.*}
 
           if [ "$ENTRY_COUNT" -eq 0 ]; then
-            echo "Keine <entry>-Elemente gefunden"
+            echo "Keine <entry>-Elemente gefunden → entweder leeres Package oder falsches Format"
+            head -n 30 "$XML_FILE" || true
             exit 1
           fi
 
@@ -105,21 +143,23 @@ jobs:
 
           for i in $(seq 1 "$ENTRY_COUNT"); do
             ID=$(xmllint --xpath \
-              "string((/*[local-name()='feed']/*[local-name()='entry'][$i]//*[local-name()='Id'])[1])" \
-              "$XML_FILE")
+              "string((//*[local-name()='feed']/*[local-name()='entry'])[$i]//*[local-name()='Id'][1])" \
+              "$XML_FILE" 2>/dev/null || echo "")
 
             VERSION=$(xmllint --xpath \
-              "string((/*[local-name()='feed']/*[local-name()='entry'][$i]//*[local-name()='Version'])[1])" \
-              "$XML_FILE")
+              "string((//*[local-name()='feed']/*[local-name()='entry'])[$i]//*[local-name()='Version'][1])" \
+              "$XML_FILE" 2>/dev/null || echo "")
 
             if [ -n "$ID" ] && [ -n "$VERSION" ]; then
-              echo "- $ID (Version $VERSION)"
+              echo "- $ID (v$VERSION)"
               echo "$ID:$VERSION" >> artifacts.txt
+            else
+              echo "Warnung: Entry $i hat kein Id oder Version"
             fi
           done
 
           echo ""
           echo "======================================"
-          echo "Extrahierte iFlows (in artifacts.txt gespeichert):"
-          cat artifacts.txt || echo "(keine Einträge)"
+          echo "Extrahierte Artefakte (artifacts.txt):"
+          cat artifacts.txt || echo "(keine gültigen Einträge)"
           echo "======================================"
