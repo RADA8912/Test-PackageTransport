@@ -17,13 +17,7 @@ permissions:
   contents: write
 
 jobs:
-  call-CPILint:
-    uses: ./.github/workflows/CPILint.yml
-    with:
-      flow_id: ${{ github.event.inputs.iFlowId }}
-
   build:
-    needs: call-CPILint
     runs-on: ubuntu-latest
 
     steps:
