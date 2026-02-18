@@ -14,14 +14,6 @@ jobs:
     steps:
 
       # ------------------------------------------------------------
-      # xmllint installieren (für XPath-Abfragen)
-      # ------------------------------------------------------------
-      - name: Install xmllint
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libxml2-utils
-
-      # ------------------------------------------------------------
       # 1. OAuth2 Token holen (Client Credentials)
       # ------------------------------------------------------------
       - name: Get OAuth Token
@@ -66,9 +58,7 @@ jobs:
           TOKEN=$(cat oauth_token.txt)
           echo "Token length      : ${#TOKEN} Zeichen"
 
-          # ────────────────────────────────────────────────
           # Robuster curl-Aufruf mit Trace + Header-Dump
-          # ────────────────────────────────────────────────
           curl --fail-with-body \
             -w "\n---HTTP_STATUS:%{http_code}\n---EFFECTIVE_URL:%{url_effective}\n---SIZE:%{size_download}\n" \
             -H "Authorization: Bearer $TOKEN" \
@@ -91,7 +81,7 @@ jobs:
           head -n 20 response_headers.txt || echo "(keine Headers)"
 
           echo ""
-          echo "=== Letzte 400 Bytes Body (falls vorhanden) ==="
+          echo "=== Letzte 400 Bytes Body ==="
           tail -c 400 response_body.xml 2>/dev/null || echo "(Datei leer oder nicht existent)"
 
           if [ "$CURL_EXIT" -ne 0 ] || [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -gt 299 ]; then
@@ -102,7 +92,7 @@ jobs:
             echo "Body (falls vorhanden):"
             cat response_body.xml || echo "(leer)"
             echo ""
-            echo "Vollständiger curl-Trace:"
+            echo "Vollständiger curl-Trace (letzte 60 Zeilen):"
             tail -n 60 curl_trace.log || cat curl_trace.log
             exit 1
           fi
@@ -113,53 +103,66 @@ jobs:
           head -n 12 response.xml || echo "(konnte XML-Head nicht anzeigen)"
 
       # ------------------------------------------------------------
-      # 3. d:Id und d:Version aus response.xml extrahieren
+      # 3. Id + Version mit Python extrahieren (kein xmllint mehr nötig)
       # ------------------------------------------------------------
-      - name: Extract d:Id and d:Version from response.xml
+      - name: Extract iFlow IDs and Versions (Python)
         run: |
-          set -e
-          XML_FILE="response.xml"
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          import os
 
-          if [ ! -s "$XML_FILE" ]; then
-            echo "FEHLER: response.xml ist leer oder existiert nicht!"
-            ls -la response.xml || true
-            exit 1
-          fi
+          XML_FILE = "response.xml"
 
-          # Anzahl <entry>-Elemente zählen
-          ENTRY_COUNT=$(xmllint --xpath "count(//*[local-name()='feed']/*[local-name()='entry'])" "$XML_FILE" 2>/dev/null || echo "0")
-          ENTRY_COUNT=${ENTRY_COUNT%.*}
+          if not os.path.isfile(XML_FILE) or os.path.getsize(XML_FILE) == 0:
+              print("FEHLER: response.xml existiert nicht oder ist leer!")
+              exit(1)
 
-          if [ "$ENTRY_COUNT" -eq 0 ]; then
-            echo "Keine <entry>-Elemente gefunden → entweder leeres Package oder falsches Format"
-            head -n 30 "$XML_FILE" || true
-            exit 1
-          fi
+          try:
+              tree = ET.parse(XML_FILE)
+              root = tree.getroot()
+          except Exception as e:
+              print(f"XML-Parsing fehlgeschlagen: {e}")
+              with open(XML_FILE, "r", encoding="utf-8") as f:
+                  print("Erste 800 Zeichen der Datei:")
+                  print(f.read(800))
+              exit(1)
 
-          echo "Gefundene Artifacts: $ENTRY_COUNT"
-          echo ""
+          # Namensräume definieren (sehr wichtig bei OData/Atom-Feed!)
+          ns = {
+              "atom": "http://www.w3.org/2005/Atom",
+              "d":    "http://schemas.microsoft.com/ado/2007/08/dataservices"
+          }
 
-          > artifacts.txt
+          entries = root.findall(".//atom:entry", ns)
 
-          for i in $(seq 1 "$ENTRY_COUNT"); do
-            ID=$(xmllint --xpath \
-              "string((//*[local-name()='feed']/*[local-name()='entry'])[$i]//*[local-name()='Id'][1])" \
-              "$XML_FILE" 2>/dev/null || echo "")
+          print(f"Gefundene <entry>-Elemente: {len(entries)}\n")
 
-            VERSION=$(xmllint --xpath \
-              "string((//*[local-name()='feed']/*[local-name()='entry'])[$i]//*[local-name()='Version'][1])" \
-              "$XML_FILE" 2>/dev/null || echo "")
+          if len(entries) == 0:
+              print("Keine Einträge gefunden. Roh-XML-Auszug:")
+              print(ET.tostring(root, encoding="unicode")[:1200])
+              exit(1)
 
-            if [ -n "$ID" ] && [ -n "$VERSION" ]; then
-              echo "- $ID (v$VERSION)"
-              echo "$ID:$VERSION" >> artifacts.txt
-            else
-              echo "Warnung: Entry $i hat kein Id oder Version"
-            fi
-          done
+          with open("artifacts.txt", "w", encoding="utf-8") as f:
+              for entry in entries:
+                  id_elem = entry.find(".//d:Id", ns)
+                  version_elem = entry.find(".//d:Version", ns)
+
+                  if id_elem is not None and version_elem is not None:
+                      id_val = (id_elem.text or "").strip()
+                      ver_val = (version_elem.text or "").strip()
+                      if id_val and ver_val:
+                          print(f"- {id_val} (Version {ver_val})")
+                          f.write(f"{id_val}:{ver_val}\n")
+                      else:
+                          print(f"Warnung: Leeres Id/Version in Entry")
+                  else:
+                      print("Warnung: Entry ohne Id oder Version")
+
+          print("\nErgebnis in artifacts.txt gespeichert.")
+          PY
 
           echo ""
           echo "======================================"
-          echo "Extrahierte Artefakte (artifacts.txt):"
-          cat artifacts.txt || echo "(keine gültigen Einträge)"
+          echo "Inhalt von artifacts.txt:"
+          cat artifacts.txt || echo "(Datei leer oder nicht vorhanden)"
           echo "======================================"
