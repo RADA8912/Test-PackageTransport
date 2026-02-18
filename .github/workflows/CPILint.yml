@@ -1,0 +1,38 @@
+name: Run CPILint 
+on:
+  workflow_call:
+    inputs:
+      flow_Id:
+        description: 'iFlow Id for download'
+        required: true
+        type: string
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Tests
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'zulu'
+
+      - name: Git Branch
+        run: git pull
+
+      - name: java home
+        run: echo $JAVA_HOME
+
+      - name: current directory
+        run: pwd
+
+      - name: get the cplink test script test cases
+        run: |
+            wget https://github.com/mwittrock/cpilint/releases/download/v1.1.0/cpilint-1.1.0.zip
+            unzip cpilint-1.1.0.zip
+            chmod +x ./cpilint-1.1.0/bin/cpilint
+
+      - name: Executing tests on iFlow
+        run: ./cpilint-1.1.0/bin/cpilint -rules ./.github/cpilint.xml -key ./.github/serviceKey.json -iflows ${{ inputs.flow_id }}
