@@ -1,0 +1,9 @@
+{
+  "oauth": {
+    "clientid": "sb-72493dbb-f9e3-43dc-ba00-d32302caccd2!b77644|it!b16077",
+    "clientsecret": "dda0498f-0e87-44a1-83a8-5fb9f59fdba3$8sVqVwKx_cStgASgGoonlUqh_r6f2NztA3jOKD_6FPk=",
+    "url": "https://ntt-pi-dev.it-cpi001.cfapps.eu10.hana.ondemand.com",
+    "createdate": "2024-04-30T13:49:44.969Z",
+    "tokenurl": "https://ntt-pi-dev.authentication.eu10.hana.ondemand.com/oauth/token"
+  }
+}
