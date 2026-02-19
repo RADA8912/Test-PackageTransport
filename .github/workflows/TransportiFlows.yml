@@ -166,52 +166,20 @@ jobs:
           echo "Inhalt von artifacts.txt:"
           cat artifacts.txt || echo "(Datei leer oder nicht vorhanden)"
           echo "======================================"
-	    # ------------------------------------------------------------
-      # 4. Dynamische Matrix aus artifacts.txt erzeugen
-      # ------------------------------------------------------------
-      - name: Generate matrix from artifacts.txt
-        id: generate-matrix
-        run: |
-          if [ ! -s artifacts.txt ]; then
-            echo "artifacts.txt ist leer → nichts zu transportieren"
-            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Zeilen bereinigen + in JSON-Array umwandeln
-          jq -R -s -c '
-            split("\n")
-            | map(select(length > 0 and startswith(" ") | not))
-            | map(split(":") | select(length == 2))
-            | map({
-                iFlowId:       .[0] | gsub("[[:space:]]+$"; ""),     # trim
-                artifactVersion: .[1] | gsub("^[[:space:]]+"; ""),   # trim
-                packageID:     "${{ inputs.package_id }}"
-              })
-            | {include: .}
-          ' artifacts.txt > matrix.json
-
-          MATRIX_CONTENT=$(cat matrix.json)
-          echo "Generated matrix:"
-          echo "$MATRIX_CONTENT" | jq .
-
-          echo "matrix=$MATRIX_CONTENT" >> $GITHUB_OUTPUT
 
       # ------------------------------------------------------------
-      # 5. Transport für ALLE iFlows (Matrix → reusable workflow)
+      # Debug-Dateien hochladen (auch bei Fehlern)
       # ------------------------------------------------------------
-        transport-all:
-         name: Transport ${{ matrix.iFlowId }} v${{ matrix.artifactVersion }}
-         if: ${{ steps.generate-matrix.outputs.matrix != '{"include":[]}' }}
-         needs: [extract-iflow-ids, generate-matrix]   # oder wie dein Extrakt-Job heißt
-         strategy:
-         fail-fast: false                         # wichtig: andere iFlows sollen weiterlaufen
-         max-parallel: 3                          # optional: nicht zu viele gleichzeitig
-         matrix: ${{ fromJson(steps.generate-matrix.outputs.matrix) }}
-
-         uses: ./.github/workflows/SAP-Cloud-Integration-Transport.yml   # ← exakter Dateiname!
-         with:
-          iFlowId:          ${{ matrix.iFlowId }}
-          artifactVersion:  ${{ matrix.artifactVersion }}
-          packageID:        ${{ matrix.packageID }}
-        secrets: inherit
+      - name: Upload debug artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpi-extract-debug-${{ github.run_id }}
+          path: |
+            response.xml
+            response_headers.txt
+            curl_trace.log
+            oauth_token.txt
+            artifacts.txt
+          retention-days: 7
+          if-no-files-found: warn
