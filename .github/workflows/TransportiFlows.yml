@@ -8,10 +8,21 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+
 jobs:
   extract-iflow-ids:
     runs-on: ubuntu-latest
+
     steps:
+      # ------------------------------------------------------------
+      # 0. Checkout Repository
+      # ------------------------------------------------------------
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # ------------------------------------------------------------
       # 1. OAuth2 Token holen (Client Credentials)
@@ -22,6 +33,7 @@ jobs:
           UAA_CLIENT_ID: ${{ secrets.CPI_USER }}
           UAA_CLIENT_SECRET: ${{ secrets.CPI_PASSWORD }}
         run: |
+          set -e
           echo "Fetching OAuth token..."
 
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$UAA_TOKEN_URL" \
@@ -39,10 +51,10 @@ jobs:
           fi
 
           echo "$BODY" | jq -r '.access_token' > oauth_token.txt
-          echo "Token erhalten (Länge: $(wc -c < oauth_token.txt))"
+          echo "Token erhalten"
 
       # ------------------------------------------------------------
-      # 2. GET: Designtime Artifacts abrufen – robust mit Debug
+      # 2. GET: Designtime Artifacts abrufen
       # ------------------------------------------------------------
       - name: Get Designtime Artifacts
         env:
@@ -51,135 +63,108 @@ jobs:
         run: |
           set -e
 
-          echo "Package ID        : $PACKAGE_ID"
-          echo "Base URL          : $CPI_BASE_URL"
-          echo "Target URL        : $CPI_BASE_URL/api/v1/IntegrationPackages('$PACKAGE_ID')/IntegrationDesigntimeArtifacts"
-
           TOKEN=$(cat oauth_token.txt)
-          echo "Token length      : ${#TOKEN} Zeichen"
 
-          # Robuster curl-Aufruf mit Trace + Header-Dump
-          curl --fail-with-body \
-            -w "\n---HTTP_STATUS:%{http_code}\n---EFFECTIVE_URL:%{url_effective}\n---SIZE:%{size_download}\n" \
+          curl -s --fail \
             -H "Authorization: Bearer $TOKEN" \
             -H "Accept: application/xml" \
             "$CPI_BASE_URL/api/v1/IntegrationPackages('$PACKAGE_ID')/IntegrationDesigntimeArtifacts" \
-            -o response_body.xml \
-            --dump-header response_headers.txt \
-            --trace-ascii curl_trace.log
+            -o response.xml
 
-          CURL_EXIT=$?
-
-          echo "curl exit code          : $CURL_EXIT"
-
-          # HTTP-Status extrahieren
-          HTTP_STATUS=$(grep "^---HTTP_STATUS:" curl_trace.log | cut -d: -f2 | tr -d '[:space:]' || echo "000")
-          echo "HTTP Status             : $HTTP_STATUS"
-
-          echo ""
-          echo "=== Response Headers (Auszug) ==="
-          head -n 20 response_headers.txt || echo "(keine Headers)"
-
-          echo ""
-          echo "=== Letzte 400 Bytes Body ==="
-          tail -c 400 response_body.xml 2>/dev/null || echo "(Datei leer oder nicht existent)"
-
-          if [ "$CURL_EXIT" -ne 0 ] || [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -gt 299 ]; then
-            echo ""
-            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-            echo "Request FEHLGESCHLAGEN – HTTP $HTTP_STATUS"
-            echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-            echo "Body (falls vorhanden):"
-            cat response_body.xml || echo "(leer)"
-            echo ""
-            echo "Vollständiger curl-Trace (letzte 60 Zeilen):"
-            tail -n 60 curl_trace.log || cat curl_trace.log
-            exit 1
-          fi
-
-          mv response_body.xml response.xml
-          echo ""
-          echo "Erfolgreich gespeichert → response.xml ($(wc -c < response.xml) Bytes)"
-          head -n 12 response.xml || echo "(konnte XML-Head nicht anzeigen)"
+          echo "response.xml gespeichert ($(wc -c < response.xml) Bytes)"
 
       # ------------------------------------------------------------
-      # 3. Id + Version mit Python extrahieren (kein xmllint mehr nötig)
+      # 3. Id + Version extrahieren (Python)
       # ------------------------------------------------------------
-      - name: Extract iFlow IDs and Versions (Python)
+      - name: Extract iFlow IDs and Versions
         run: |
           python3 - <<'PY'
           import xml.etree.ElementTree as ET
           import os
 
-          XML_FILE = "response.xml"
-
-          if not os.path.isfile(XML_FILE) or os.path.getsize(XML_FILE) == 0:
-              print("FEHLER: response.xml existiert nicht oder ist leer!")
-              exit(1)
-
-          try:
-              tree = ET.parse(XML_FILE)
-              root = tree.getroot()
-          except Exception as e:
-              print(f"XML-Parsing fehlgeschlagen: {e}")
-              with open(XML_FILE, "r", encoding="utf-8") as f:
-                  print("Erste 800 Zeichen der Datei:")
-                  print(f.read(800))
-              exit(1)
-
-          # Namensräume definieren (sehr wichtig bei OData/Atom-Feed!)
           ns = {
               "atom": "http://www.w3.org/2005/Atom",
-              "d":    "http://schemas.microsoft.com/ado/2007/08/dataservices"
+              "d": "http://schemas.microsoft.com/ado/2007/08/dataservices"
           }
+
+          tree = ET.parse("response.xml")
+          root = tree.getroot()
 
           entries = root.findall(".//atom:entry", ns)
 
-          print(f"Gefundene <entry>-Elemente: {len(entries)}\n")
+          with open("artifacts.txt", "w") as f:
+              for e in entries:
+                  id_el = e.find(".//d:Id", ns)
+                  v_el = e.find(".//d:Version", ns)
+                  if id_el is not None and v_el is not None:
+                      f.write(f"{id_el.text.strip()}:{v_el.text.strip()}\n")
 
-          if len(entries) == 0:
-              print("Keine Einträge gefunden. Roh-XML-Auszug:")
-              print(ET.tostring(root, encoding="unicode")[:1200])
-              exit(1)
-
-          with open("artifacts.txt", "w", encoding="utf-8") as f:
-              for entry in entries:
-                  id_elem = entry.find(".//d:Id", ns)
-                  version_elem = entry.find(".//d:Version", ns)
-
-                  if id_elem is not None and version_elem is not None:
-                      id_val = (id_elem.text or "").strip()
-                      ver_val = (version_elem.text or "").strip()
-                      if id_val and ver_val:
-                          print(f"- {id_val} (Version {ver_val})")
-                          f.write(f"{id_val}:{ver_val}\n")
-                      else:
-                          print(f"Warnung: Leeres Id/Version in Entry")
-                  else:
-                      print("Warnung: Entry ohne Id oder Version")
-
-          print("\nErgebnis in artifacts.txt gespeichert.")
+          print("artifacts.txt erstellt")
           PY
 
-          echo ""
-          echo "======================================"
-          echo "Inhalt von artifacts.txt:"
-          cat artifacts.txt || echo "(Datei leer oder nicht vorhanden)"
-          echo "======================================"
+          cat artifacts.txt
 
       # ------------------------------------------------------------
-      # Debug-Dateien hochladen (auch bei Fehlern)
+      # 4. Artifacts verarbeiten (Download → Modify → Upload)
       # ------------------------------------------------------------
-      - name: Upload debug artifacts (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cpi-extract-debug-${{ github.run_id }}
-          path: |
-            response.xml
-            response_headers.txt
-            curl_trace.log
-            oauth_token.txt
-            artifacts.txt
-          retention-days: 7
-          if-no-files-found: warn
+      - name: Process Artifacts
+        env:
+          PIPER_apiServiceKey: ${{ secrets.CPIDOWNLOADKEY }}
+          PIPER_verbose: 'true'
+        run: |
+          set -e
+
+          mkdir -p downloaded_artifacts downloaded_artifacts_qas workdir
+
+          while IFS=":" read -r artifactID artifactVersion; do
+            [ -z "$artifactID" ] && continue
+            [ -z "$artifactVersion" ] && continue
+
+            echo "======================================"
+            echo "Processing $artifactID:$artifactVersion"
+            echo "======================================"
+
+            # Download iFlow
+            piper integrationArtifactDownload \
+              --downloadPath downloaded_artifacts \
+              --integrationFlowId "$artifactID" \
+              --integrationFlowVersion "$artifactVersion"
+
+            # Unzip
+            rm -rf workdir/*
+            unzip downloaded_artifacts/$artifactID.zip -d workdir
+
+            # Update MANIFEST.MF
+            find workdir -type f -path "*/META-INF/MANIFEST.MF" | while read mf; do
+              sed -i -E '
+                /^Bundle-SymbolicName:/ {
+                  s/^Bundle-SymbolicName: ([^;_]+)(_qas)?(;.*)?$/Bundle-SymbolicName: \1_qas\3/
+                }
+              ' "$mf"
+
+              sed -i -E '
+                /^Origin-Bundle-SymbolicName:/ {
+                  s/^Origin-Bundle-SymbolicName:[[:space:]]*([^[:space:]]+)(_qas)?$/Origin-Bundle-SymbolicName: \1_qas/
+                }
+              ' "$mf"
+            done
+
+            # Zip QAS artifact
+            artifactID_qas="${artifactID}_qas"
+            cd workdir
+            zip -r "../downloaded_artifacts_qas/$artifactID_qas.zip" .
+            cd ..
+
+            # Commit (optional)
+            git add downloaded_artifacts_qas/
+            git commit -m "Create QAS artifact for $artifactID" || true
+            git push || true
+
+            # Upload / Deploy
+            piper integrationArtifactUpload \
+              --integrationFlowId "_qas" \
+              --integrationFlowName "$artifactID_qas" \
+              --packageId "${{ github.event.inputs.package_id }}QAS" \
+              --filePath "downloaded_artifacts_qas/$artifactID_qas.zip"
+
+          done < artifacts.txt
