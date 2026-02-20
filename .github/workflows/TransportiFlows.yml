@@ -145,14 +145,8 @@ jobs:
       # ────────────────────────────────────────────────
       # 4. Folge-Workflow starten
       # ────────────────────────────────────────────────
-      - name: Trigger transportArtifacts workflow
-        run: |
-          set -e
-
-          echo "Starte Workflow transportArtifacts.yml"
-
-          gh workflow run transportArtifacts.yml \
-            --ref "${{ github.ref_name }}" \
-            -f packageID="${{ inputs.package_id }}"
-
-          echo "transportArtifacts.yml erfolgreich getriggert."
+      - name: Trigger transportArtifacts.yml (reusable workflow)
+        uses: ./.github/workflows/transportArtifacts.yml@main   # oder dein Branch/Tag/SHA
+        with:
+          package_id: ${{ inputs.packageID }}           # oder package_id: "${{ inputs.packageID }}QAS" – je nach Bedarf
+        secrets: inherit                                # übergibt alle Secrets implizit (inkl. CPIDOWNLOADKEY etc.)
