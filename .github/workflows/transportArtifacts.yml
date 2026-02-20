@@ -1,108 +1,117 @@
-name: SAP Cloud Integration - Transport
+name: SAP Cloud Integration - Transport Multiple Artifacts
 
 on:
   workflow_dispatch:
     inputs:
-      iFlowId:
-        description: 'iFlow Id for download'
-        required: true
-      artifactVersion:
-        description: 'Version of the iFlow'
-        required: true
       packageID:
-        description: 'Package ID for upload'
+        description: 'Package ID for upload (will be suffixed with QAS for target)'
         required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: write          # für git commit & push
+  actions: write           # falls später reusable workflows genutzt werden
 
 jobs:
-  call-CPILint:
-    uses: ./.github/workflows/CPILint.yml
-    with:
-      flow_id: ${{ github.event.inputs.iFlowId }}
-
-  build:
-    needs: call-CPILint
+  prepare-matrix:
     runs-on: ubuntu-latest
-
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
     steps:
-      # 🔹 Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 🔹 Download iFlow
+      - name: Check if artifacts.txt exists
+        id: check
+        run: |
+          if [ ! -f artifacts.txt ]; then
+            echo "FEHLER: artifacts.txt nicht gefunden!"
+            exit 1
+          fi
+          echo "artifacts.txt gefunden ($(wc -l < artifacts.txt) Zeilen)"
+
+      - name: Generate dynamic matrix from artifacts.txt
+        id: generate
+        run: |
+          # Erzeugt JSON im Format: { "include": [ { "artifact_id": "...", "artifact_version": "..." }, ... ] }
+          jq -R -s -c '
+            split("\n") |
+            map(select(length > 0 and contains(":"))) |
+            map(split(":")) |
+            map({artifact_id: .[0] | rtrimstr(" "), artifact_version: .[1] | ltrimstr(" ")}) |
+            {include: .}
+          ' artifacts.txt > matrix.json
+
+          cat matrix.json
+          echo "matrix=$(cat matrix.json)" >> $GITHUB_OUTPUT
+
+  process-iflows:
+    needs: prepare-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+      fail-fast: false           # weitermachen, auch wenn ein iFlow fehlschlägt
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Download IFlow from SAP Cloud Integration
         uses: SAP/project-piper-action@v1.22.6
         with:
           step-name: integrationArtifactDownload
           flags: >-
             --downloadPath downloaded_artifacts
-            --integrationFlowId ${{ github.event.inputs.iFlowId }}
-            --integrationFlowVersion ${{ github.event.inputs.artifactVersion }}
+            --integrationFlowId ${{ matrix.artifact_id }}
+            --integrationFlowVersion ${{ matrix.artifact_version }}
         env:
           PIPER_apiServiceKey: ${{ secrets.CPIDOWNLOADKEY }}
           PIPER_verbose: 'true'
 
-      # 🔹 Unzip iFlow
       - name: Unzip iFlow
         run: |
           mkdir -p workdir
-          unzip downloaded_artifacts/${{ github.event.inputs.iFlowId }}.zip -d workdir
+          unzip -o "downloaded_artifacts/${{ matrix.artifact_id }}.zip" -d workdir
 
-      # 🔹 Manipulate MANIFEST.MF
-      - name: Update MANIFEST.MF (_qas)
+      - name: Update MANIFEST.MF (_qas suffix)
         run: |
-          find workdir -type f -path "*/META-INF/MANIFEST.MF" | while read manifest; do
+          find workdir -type f -path "*/META-INF/MANIFEST.MF" | while read -r manifest; do
             echo "Updating $manifest"
-
-            # Bundle-SymbolicName → nur Teil vor ;
             sed -i -E '
               /^Bundle-SymbolicName:/ {
                 s/^Bundle-SymbolicName: ([^;_]+)(_qas)?(;.*)?$/Bundle-SymbolicName: \1_qas\3/
               }
-            ' "$manifest"
-
-            # Origin-Bundle-SymbolicName (Komplett EINZEILIG)
-            sed -i -E '
               /^Origin-Bundle-SymbolicName:/ {
                 s/^Origin-Bundle-SymbolicName:[[:space:]]*([^[:space:]]+)(_qas)?$/Origin-Bundle-SymbolicName: \1_qas/
               }
             ' "$manifest"
-
           done
 
-      # 🔹 Prepare QAS artifact directory
       - name: Prepare QAS artifact directory
         run: |
           mkdir -p downloaded_artifacts_qas
 
-      # 🔹 Rezip iFlow → QAS-Verzeichnis
       - name: Zip modified iFlow (QAS)
         run: |
           cd workdir
-          zip -r ../downloaded_artifacts_qas/${{ github.event.inputs.iFlowId }}_qas.zip .
+          zip -r "../downloaded_artifacts_qas/${{ matrix.artifact_id }}_qas.zip" .
           cd ..
 
-      # 🔹 Commit QAS artifact (optional aber sauber)
-      - name: Commit QAS iFlow
+      - name: Commit QAS artifact (optional)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add downloaded_artifacts_qas/
-          git commit -m "Create QAS artifact for ${{ github.event.inputs.iFlowId }}" || echo "No changes"
-          git push
+          git commit -m "Create QAS artifact for ${{ matrix.artifact_id }} (v${{ matrix.artifact_version }})" || echo "No changes to commit"
+          git push || echo "Push nicht nötig oder fehlgeschlagen"
 
-      # 🔹 Upload/Deploy IFlow to Tenant B
-      - name: Upload/Deploy IFlow to Tenant B
+      - name: Upload/Deploy modified IFlow to QAS Tenant
         uses: SAP/project-piper-action@v1.22.6
         with:
           step-name: integrationArtifactUpload
           flags: >-
-            --integrationFlowId ${{ github.event.inputs.iFlowId }}_qas
-            --packageId ${{ github.event.inputs.packageID }}QAS
-            --filePath downloaded_artifacts_qas/${{ github.event.inputs.iFlowId }}_qas.zip
+            --integrationFlowId ${{ matrix.artifact_id }}_qas
+            --packageId ${{ inputs.packageID }}QAS
+            --filePath downloaded_artifacts_qas/${{ matrix.artifact_id }}_qas.zip
         env:
           PIPER_apiServiceKey: ${{ secrets.CPIDOWNLOADKEY }}
