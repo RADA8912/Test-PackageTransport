@@ -16,6 +16,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    
+      # 🔹 Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # ────────────────────────────────────────────────
       # 1. OAuth2 Token holen (Client Credentials)
@@ -108,37 +114,30 @@ jobs:
           echo "Inhalt von artifacts.txt:"
           cat artifacts.txt
           echo "======================================"
-
       # ────────────────────────────────────────────────
-      # 3b. artifacts.txt als GitHub Artifact speichern
+      # 3b. artifacts.txt im Repository speichern
       # ────────────────────────────────────────────────
-      - name: Upload artifacts.txt
-        uses: actions/upload-artifact@v4
-        with:
-          name: extracted-iflow-artifacts
-          path: artifacts.txt
-          if-no-files-found: error
-          retention-days: 7
-
-      # ────────────────────────────────────────────────
-      # 4. Schleife: Iteration über artifacts.txt
-      # ────────────────────────────────────────────────
-      - name: Download artifacts.txt
-        uses: actions/download-artifact@v4
-        with:
-          name: extracted-iflow-artifacts
-
-      - name: Process each iFlow sequentially via gh workflow run
+      - name: Commit artifacts.txt to repository
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          ls -la
 
-          while IFS=: read -r artifactId artifactVersion; do
-            [ -z "$artifactId" ] && continue
-            gh workflow run transportScenarioFlow.yml \
-              -f artifact_id="$artifactId" \
-              -f artifact_version="$artifactVersion" \
-              -f package_id="${{ inputs.package_id }}"
-          done < artifacts.txt
+          if [ ! -s artifacts.txt ]; then
+            echo "FEHLER: artifacts.txt fehlt oder ist leer!"
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git status
+          git add artifacts.txt
+
+          if git diff --cached --quiet; then
+            echo "Keine Änderungen an artifacts.txt – kein Commit nötig."
+          else
+            git commit -m "Update artifacts.txt from CPI package ${{ inputs.package_id }}"
+            git push origin HEAD:${{ github.ref_name }}
+            echo "artifacts.txt erfolgreich committed."
+          fi
