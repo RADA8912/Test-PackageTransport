@@ -146,8 +146,6 @@ jobs:
       # 4. Folge-Workflow starten
       # ────────────────────────────────────────────────
       - name: Trigger transportArtifacts workflow
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
 
