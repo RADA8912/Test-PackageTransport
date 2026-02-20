@@ -126,9 +126,15 @@ jobs:
     needs: extract-and-process-iflows   # läuft erst NACH dem ersten Job
     runs-on: ubuntu-latest
     steps:
+      # ────────────────────────────────────────────────
+      # Checkout Repository
+      # ────────────────────────────────────────────────
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
       - name: Trigger transportArtifacts.yml
-        uses: ./.github/workflows/transportArtifacts.yml@main
-        # oder: uses: ./.github/workflows/transportArtifacts.yml@${{ github.sha }}
-        # oder: uses: ./.github/workflows/transportArtifacts.yml@${{ github.ref_name }}
+        uses: ./.github/workflows/transportArtifacts.yml
         with:
           packageID: ${{ inputs.package_id }}
