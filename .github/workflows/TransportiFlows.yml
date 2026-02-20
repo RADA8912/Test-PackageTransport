@@ -199,8 +199,7 @@ jobs:
             echo "→ Uploading _qas version..."
             piper integrationArtifactUpload \
               --integrationFlowId "${artifactId}_qas" \
-              --integrationFlowName "${artifactId}_qas" \
-              --packageId "${{ inputs.package_id }}" \
+              --packageId "${{ inputs.package_id }}QAS" \
               --filePath "downloaded_artifacts_qas/${artifactId}_qas.zip" \
               --verbose
 
