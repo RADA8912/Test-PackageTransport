@@ -143,8 +143,6 @@ jobs:
       # 4. Schleife: Download → Modify → Upload pro iFlow
       # ────────────────────────────────────────────────
       - name: Process each iFlow sequentially via gh workflow run
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # oder PAT mit workflow-Rechten
         run: |
           while IFS=: read -r artifactId artifactVersion; do
             [ -z "$artifactId" ] && continue
