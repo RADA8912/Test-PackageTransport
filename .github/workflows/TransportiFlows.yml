@@ -124,34 +124,34 @@ jobs:
 
   prepare-matrix:
     runs-on: ubuntu-latest
+    needs: extract-and-process-iflows
     outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
+        matrix: ${{ steps.generate.outputs.matrix }}
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check if artifacts.txt exists
-        id: check
+      - name: Ensure artifacts.txt exists
         run: |
-          if [ ! -f artifacts.txt ]; then
+            if [ ! -f artifacts.txt ]; then
             echo "FEHLER: artifacts.txt nicht gefunden!"
             exit 1
-          fi
-          echo "artifacts.txt gefunden ($(wc -l < artifacts.txt) Zeilen)"
+            fi
+            echo "artifacts.txt gefunden ($(wc -l < artifacts.txt) Zeilen)"
 
       - name: Generate dynamic matrix from artifacts.txt
         id: generate
         run: |
-          jq -R -s -c '
+            jq -R -s -c '
             split("\n") |
             map(select(length > 0 and contains(":"))) |
             map(split(":")) |
             map({artifact_id: .[0] | rtrimstr(" "), artifact_version: .[1] | ltrimstr(" ")}) |
             {include: .}
-          ' artifacts.txt > matrix.json
+            ' artifacts.txt > matrix.json
 
-          cat matrix.json
-          echo "matrix=$(cat matrix.json)" >> $GITHUB_OUTPUT
+            cat matrix.json
+            echo "matrix=$(cat matrix.json)" >> $GITHUB_OUTPUT
 
   process-iflows:
     needs: prepare-matrix
@@ -218,7 +218,7 @@ jobs:
           step-name: integrationArtifactUpload
           flags: >-
             --integrationFlowId ${{ matrix.artifact_id }}_qas
-            --packageId ${{ inputs.packageID }}QAS
+            --packageId ${{ inputs.package_id }}QAS
             --filePath downloaded_artifacts_qas/${{ matrix.artifact_id }}_qas.zip
         env:
           PIPER_apiServiceKey: ${{ secrets.CPIDOWNLOADKEY }}
