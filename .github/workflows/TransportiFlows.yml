@@ -122,9 +122,6 @@ jobs:
             echo "artifacts.txt committed & pushed"
           fi
 
-  # ────────────────────────────────────────────────
-  # Neuer separater Job: Ruft den reusable Workflow auf
-  # ────────────────────────────────────────────────
   trigger-transport:
     needs: extract-and-process-iflows   # läuft erst NACH dem ersten Job
     runs-on: ubuntu-latest
@@ -134,5 +131,4 @@ jobs:
         # oder: uses: ./.github/workflows/transportArtifacts.yml@${{ github.sha }}
         # oder: uses: ./.github/workflows/transportArtifacts.yml@${{ github.ref_name }}
         with:
-          package_id: ${{ inputs.package_id }}     # oder ${{ inputs.package_id }}QAS – wie du brauchst
-        secrets: inherit
+          packageID: ${{ inputs.package_id }}
