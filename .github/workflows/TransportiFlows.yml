@@ -14,15 +14,9 @@ permissions:
 jobs:
   extract-and-process-iflows:
     runs-on: ubuntu-latest
+    
     steps:
-      # ────────────────────────────────────────────────
-      # Checkout
-      # ────────────────────────────────────────────────
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
+    
       # ────────────────────────────────────────────────
       # 1. OAuth2 Token holen (Client Credentials)
       # ────────────────────────────────────────────────
@@ -143,16 +137,27 @@ jobs:
       # 4. Schleife: Download → Modify → Upload pro iFlow
       # ────────────────────────────────────────────────
       - name: Process each iFlow sequentially via gh workflow run
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
         run: |
+          set -e
+
           while IFS=: read -r artifactId artifactVersion; do
             [ -z "$artifactId" ] && continue
 
             echo "Triggering transportScenarioFlow for $artifactId @ $artifactVersion"
 
-            gh workflow run transportArtifacts.yml \
+            gh workflow run transportScenarioFlow.yml \
               --ref ${{ github.ref_name }} \
-              -f iFlowId="$artifactId" \
-              -f artifactVersion="$artifactVersion" \
-              -f packageID="${{ inputs.package_id }}"
+              -f artifact_id="$artifactId" \
+              -f artifact_version="$artifactVersion" \
+              -f package_id="${{ inputs.package_id }}"
+
+            # Optional: kleine Pause gegen Rate-Limits (GitHub Actions API ist throttled)
+            sleep 3
 
           done < artifacts.txt
+
+          echo "Alle Workflows getriggert."
