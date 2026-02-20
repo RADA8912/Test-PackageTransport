@@ -148,5 +148,4 @@ jobs:
       - name: Trigger transportArtifacts.yml (reusable workflow)
         uses: ./.github/workflows/transportArtifacts.yml@main   # oder dein Branch/Tag/SHA
         with:
-          package_id: ${{ inputs.packageID }}           # oder package_id: "${{ inputs.packageID }}QAS" – je nach Bedarf
-        secrets: inherit                                # übergibt alle Secrets implizit (inkl. CPIDOWNLOADKEY etc.)
+          packageID: ${{ inputs.package_id }}           # oder package_id: "${{ inputs.packageID }}QAS" – je nach Bedarf
