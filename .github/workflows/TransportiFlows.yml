@@ -9,8 +9,7 @@ on:
         type: string
 
 permissions:
-  contents: write          # für checkout + commit
-  actions: write           # empfohlen, wenn du andere Workflows triggerst
+  contents: write                   
 
 jobs:
   extract-and-process-iflows:
@@ -164,7 +163,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download IFlow from SAP Cloud Integration
-        uses: SAP/project-piper-action@v1.25.1
+        uses: SAP/project-piper-action@v1.22.6
         with:
           step-name: integrationArtifactDownload
           flags: >-
@@ -182,16 +181,13 @@ jobs:
 
       - name: Update MANIFEST.MF (_qas suffix)
         run: |
-          find workdir -type f -path "*/META-INF/MANIFEST.MF" | while read -r manifest; do
-            echo "Updating $manifest"
-            sed -i -E '
-              /^Bundle-SymbolicName:/ {
-                s/^Bundle-SymbolicName: ([^;_]+)(_qas)?(;.*)?$/Bundle-SymbolicName: \1_qas\3/
-              }
-              /^Origin-Bundle-SymbolicName:/ {
-                s/^Origin-Bundle-SymbolicName:[[:space:]]*([^[:space:]]+)(_qas)?$/Origin-Bundle-SymbolicName: \1_qas/
-              }
-            ' "$manifest"
+          find workdir -type f -path "*/META-INF/MANIFEST.MF" | while IFS= read -r manifest; do
+          echo "Updating $manifest"
+          dos2unix "$manifest" 2>/dev/null || true
+            
+          sed -i -E 's/^[[:space:]]*Bundle-SymbolicName:[[:space:]]*([^;[:space:]]+)(_qas)?(;.*)?$/Bundle-SymbolicName: \1_qas\3/' "$manifest"
+          sed -i -E 's/^[[:space:]]*Origin-Bundle-SymbolicName:[[:space:]]*([^[:space:]]+)(_qas)?$/Origin-Bundle-SymbolicName: \1_qas/' "$manifest" 
+            
           done
 
       - name: Prepare QAS artifact directory
@@ -213,7 +209,7 @@ jobs:
           git push || echo "Push nicht nötig oder fehlgeschlagen"
 
       - name: Upload/Deploy modified IFlow to QAS Tenant
-        uses: SAP/project-piper-action@v1.25.1
+        uses: SAP/project-piper-action@v1.22.6
         with:
           step-name: integrationArtifactUpload
           flags: >-
