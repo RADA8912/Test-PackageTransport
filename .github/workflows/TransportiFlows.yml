@@ -151,7 +151,7 @@ jobs:
 
             echo "Triggering transportScenarioFlow for $artifactId @ $artifactVersion"
 
-            gh workflow run transportArtifacts.yml.yml \
+            gh workflow run transportArtifacts.yml \
               --ref ${{ github.ref_name }} \
               -f iFlowId="$artifactId" \
               -f artifactVersion="$artifactVersion" \
