@@ -141,3 +141,20 @@ jobs:
             git push origin HEAD:${{ github.ref_name }}
             echo "artifacts.txt erfolgreich committed."
           fi
+          
+      # ────────────────────────────────────────────────
+      # 4. Folge-Workflow starten
+      # ────────────────────────────────────────────────
+      - name: Trigger transportArtifacts workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          echo "Starte Workflow transportArtifacts.yml"
+
+          gh workflow run transportArtifacts.yml \
+            --ref "${{ github.ref_name }}" \
+            -f packageID="${{ inputs.package_id }}"
+
+          echo "transportArtifacts.yml erfolgreich getriggert."
