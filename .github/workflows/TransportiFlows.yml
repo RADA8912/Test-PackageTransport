@@ -136,13 +136,22 @@ jobs:
       # ────────────────────────────────────────────────
       # 4. Schleife: Download → Modify → Upload pro iFlow
       # ────────────────────────────────────────────────
-      - name: Process each iFlow sequentially via gh workflow run
+
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          
+
+      - name: Process each iFlow sequentially via gh workflow run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
+
+          if [ ! -f artifacts.txt ]; then
+            echo "FEHLER: artifacts.txt nicht gefunden!"
+            exit 1
+          fi
 
           while IFS=: read -r artifactId artifactVersion; do
             [ -z "$artifactId" ] && continue
@@ -150,12 +159,12 @@ jobs:
             echo "Triggering transportScenarioFlow for $artifactId @ $artifactVersion"
 
             gh workflow run transportScenarioFlow.yml \
-              --ref ${{ github.ref_name }} \
+              --ref "${{ github.ref_name }}" \
               -f artifact_id="$artifactId" \
               -f artifact_version="$artifactVersion" \
               -f package_id="${{ inputs.package_id }}"
 
-            # Optional: kleine Pause gegen Rate-Limits (GitHub Actions API ist throttled)
+            # Schutz vor GitHub API Rate Limits
             sleep 3
 
           done < artifacts.txt
