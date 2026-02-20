@@ -1,7 +1,10 @@
-name: SAP Cloud Integration - Transport Multiple Artifacts
+name: SAP Cloud Integration - Transport Multiple Artifacts (Reusable)
 
+# ────────────────────────────────────────────────
+# Wichtig: Das macht den Workflow aufrufbar
+# ────────────────────────────────────────────────
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       packageID:
         description: 'Package ID for upload (will be suffixed with QAS for target)'
@@ -9,8 +12,8 @@ on:
         type: string
 
 permissions:
-  contents: write          # für git commit & push
-  actions: write           # falls später reusable workflows genutzt werden
+  contents: write                    # für git commit & push
+  actions: write                     # falls nötig
 
 jobs:
   prepare-matrix:
@@ -33,7 +36,6 @@ jobs:
       - name: Generate dynamic matrix from artifacts.txt
         id: generate
         run: |
-          # Erzeugt JSON im Format: { "include": [ { "artifact_id": "...", "artifact_version": "..." }, ... ] }
           jq -R -s -c '
             split("\n") |
             map(select(length > 0 and contains(":"))) |
@@ -50,8 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
-      fail-fast: false           # weitermachen, auch wenn ein iFlow fehlschlägt
-
+      fail-fast: false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
