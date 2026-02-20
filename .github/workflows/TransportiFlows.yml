@@ -142,71 +142,19 @@ jobs:
       # ────────────────────────────────────────────────
       # 4. Schleife: Download → Modify → Upload pro iFlow
       # ────────────────────────────────────────────────
-      - name: Process each iFlow (Download → Modify → Upload QAS)
+      - name: Process each iFlow sequentially via gh workflow run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # oder PAT mit workflow-Rechten
         run: |
-          set -e
-          if [ ! -f artifacts.txt ]; then
-            echo "FEHLER: artifacts.txt nicht gefunden!"
-            exit 1
-          fi
-
-          # Windows-Zeilenenden entfernen (falls nötig)
-          sed -i 's/\r$//' artifacts.txt
-
           while IFS=: read -r artifactId artifactVersion; do
             [ -z "$artifactId" ] && continue
 
-            echo ""
-            echo "══════════════════════════════════════════"
-            echo "Processing: $artifactId  (Version $artifactVersion)"
-            echo "══════════════════════════════════════════"
+            echo "Triggering transportScenarioFlow for $artifactId @ $artifactVersion"
 
-            # ─── Download ────────────────────────────────────
-            echo "→ Downloading artifact..."
-            piper integrationArtifactDownload \
-              --downloadPath downloaded_artifacts \
-              --integrationFlowId "$artifactId" \
-              --integrationFlowVersion "$artifactVersion" \
-              --verbose
+            gh workflow run transportArtifacts.yml.yml \
+              --ref ${{ github.ref_name }} \
+              -f iFlowId="$artifactId" \
+              -f artifactVersion="$artifactVersion" \
+              -f packageID="${{ inputs.package_id }}"
 
-            # ─── Unzip ───────────────────────────────────────
-            echo "→ Unzipping..."
-            mkdir -p workdir
-            unzip -o "downloaded_artifacts/${artifactId}.zip" -d workdir
-
-            # ─── Modify MANIFEST.MF ──────────────────────────
-            echo "→ Updating MANIFEST.MF (_qas suffix)..."
-            find workdir -type f -path "*/META-INF/MANIFEST.MF" | while read -r manifest; do
-              echo "  Updating $manifest"
-              sed -i -E '
-                /^Bundle-SymbolicName:/ {
-                  s/^Bundle-SymbolicName: ([^;_]+)(_qas)?(;.*)?$/Bundle-SymbolicName: \1_qas\3/
-                }
-                /^Origin-Bundle-SymbolicName:/ {
-                  s/^Origin-Bundle-SymbolicName:[[:space:]]*([^[:space:]]+)(_qas)?$/Origin-Bundle-SymbolicName: \1_qas/
-                }
-              ' "$manifest"
-            done
-
-            # ─── Re-Zip as _qas ─────────────────────────────
-            echo "→ Creating QAS zip..."
-            mkdir -p downloaded_artifacts_qas
-            cd workdir
-            zip -r "../downloaded_artifacts_qas/${artifactId}_qas.zip" .
-            cd ..
-
-            # ─── Upload / Deploy to target tenant ───────────
-            echo "→ Uploading _qas version..."
-            piper integrationArtifactUpload \
-              --integrationFlowId "${artifactId}_qas" \
-              --packageId "${{ inputs.package_id }}QAS" \
-              --filePath "downloaded_artifacts_qas/${artifactId}_qas.zip" \
-              --verbose
-
-            echo "→ Artifact ${artifactId}_qas erfolgreich verarbeitet."
           done < artifacts.txt
-
-          echo ""
-          echo "=========================================="
-          echo "Alle Artifacts erfolgreich verarbeitet."
-          echo "=========================================="
