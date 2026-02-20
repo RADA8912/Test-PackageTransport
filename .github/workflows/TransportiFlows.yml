@@ -164,7 +164,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download IFlow from SAP Cloud Integration
-        uses: SAP/project-piper-action@v1.22.6
+        uses: SAP/project-piper-action@v1.38.0
         with:
           step-name: integrationArtifactDownload
           flags: >-
@@ -213,7 +213,7 @@ jobs:
           git push || echo "Push nicht nötig oder fehlgeschlagen"
 
       - name: Upload/Deploy modified IFlow to QAS Tenant
-        uses: SAP/project-piper-action@v1.22.6
+        uses: SAP/project-piper-action@v1.38.0
         with:
           step-name: integrationArtifactUpload
           flags: >-
