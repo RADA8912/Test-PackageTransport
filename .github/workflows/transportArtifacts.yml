@@ -9,14 +9,8 @@ on:
       artifactVersion:
         description: 'Version of the iFlow'
         required: true
-      iFlowName:
-        description: 'Name of the iFlow'
-        required: true
       packageID:
         description: 'Package ID for upload'
-        required: true
-      packageName:
-        description: 'Package name for upload'
         required: true
 
 permissions:
@@ -108,8 +102,7 @@ jobs:
           step-name: integrationArtifactUpload
           flags: >-
             --integrationFlowId ${{ github.event.inputs.iFlowId }}_qas
-            --integrationFlowName ${{ github.event.inputs.iFlowName }}_qas
-            --packageId ${{ github.event.inputs.packageID }}
+            --packageId ${{ github.event.inputs.packageID }}QAS
             --filePath downloaded_artifacts_qas/${{ github.event.inputs.iFlowId }}_qas.zip
         env:
           PIPER_apiServiceKey: ${{ secrets.CPIDOWNLOADKEY }}
